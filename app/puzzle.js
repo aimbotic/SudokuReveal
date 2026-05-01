@@ -24,9 +24,8 @@ import {
   clearBoardState,
 } from '../utils/progress';
 import {
-  chooseCustomBackground,
-  clearCustomBackground,
-  loadCustomBackground,
+  getBackgroundImageSource,
+  loadSelectedBackground,
 } from '../utils/background';
 
 const SETTINGS_KEY = 'puzzle_feature_settings';
@@ -330,7 +329,7 @@ export default function PuzzleScreen() {
   const [isAdOpen, setIsAdOpen]         = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [featureSettings, setFeatureSettings] = useState(DEFAULT_FEATURE_SETTINGS);
-  const [customBackground, setCustomBackground] = useState(null);
+  const [backgroundSelection, setBackgroundSelection] = useState(null);
   const [isSolved, setIsSolved]         = useState(false);
   const [isFailed, setIsFailed]         = useState(false);
   const [comboCount, setComboCount]     = useState(0);
@@ -352,12 +351,13 @@ export default function PuzzleScreen() {
   const megaPartyAnim                   = useRef(new Animated.Value(0)).current;
   const ultimatePartyAnim               = useRef(new Animated.Value(0)).current;
   const isDarkMode                      = featureSettings.darkMode;
+  const backgroundSource                = getBackgroundImageSource(backgroundSelection);
 
   useFocusEffect(
     useCallback(() => {
       async function fetchBackground() {
-        const background = await loadCustomBackground();
-        setCustomBackground(background);
+        const background = await loadSelectedBackground();
+        setBackgroundSelection(background);
       }
       fetchBackground();
     }, [])
@@ -593,18 +593,6 @@ export default function PuzzleScreen() {
   }
 
   // ── Number input ──────────────────────────────────────────────
-  async function handleChooseBackground() {
-    const background = await chooseCustomBackground();
-    if (background) {
-      setCustomBackground(background);
-    }
-  }
-
-  async function handleClearBackground() {
-    await clearCustomBackground();
-    setCustomBackground(null);
-  }
-
   async function restartCurrentPuzzle() {
     await clearBoardState(puzzle.id);
     setBoard(copyGrid(puzzle.given));
@@ -943,12 +931,12 @@ export default function PuzzleScreen() {
   return (
     <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
       <ImageBackground
-        source={customBackground ? { uri: customBackground } : undefined}
+        source={backgroundSource}
         style={styles.screenBackground}
         imageStyle={styles.gameBackgroundImage}
         resizeMode="cover"
       >
-      {customBackground && (
+      {backgroundSource && (
         <View
           pointerEvents="none"
           style={[
@@ -1136,11 +1124,8 @@ export default function PuzzleScreen() {
         visible={isSettingsOpen}
         settings={featureSettings}
         isDarkMode={isDarkMode}
-        hasCustomBackground={customBackground !== null}
         onClose={() => setIsSettingsOpen(false)}
         onToggle={handleFeatureToggle}
-        onChooseBackground={handleChooseBackground}
-        onClearBackground={handleClearBackground}
       />
 
       <AdModal
@@ -1172,11 +1157,8 @@ function SettingsModal({
   visible,
   settings,
   isDarkMode,
-  hasCustomBackground,
   onClose,
   onToggle,
-  onChooseBackground,
-  onClearBackground,
 }) {
   return (
     <Modal
@@ -1242,36 +1224,6 @@ function SettingsModal({
             isDarkMode={isDarkMode}
             onValueChange={(value) => onToggle('darkMode', value)}
           />
-          <View style={[styles.settingsBackgroundBox, isDarkMode && styles.settingsRowDark]}>
-            <Text style={[styles.settingsRowLabel, isDarkMode && styles.headingDark]}>
-              Background photo
-            </Text>
-            <View style={styles.settingsBackgroundActions}>
-              <TouchableOpacity
-                style={styles.settingsSmallButton}
-                onPress={onChooseBackground}
-                activeOpacity={0.8}
-              >
-                <Text style={styles.settingsSmallButtonText}>Pick</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[
-                  styles.settingsSmallButton,
-                  !hasCustomBackground && styles.settingsSmallButtonDisabled,
-                ]}
-                onPress={onClearBackground}
-                disabled={!hasCustomBackground}
-                activeOpacity={0.8}
-              >
-                <Text style={[
-                  styles.settingsSmallButtonText,
-                  !hasCustomBackground && styles.settingsSmallButtonTextDisabled,
-                ]}>
-                  Clear
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </View>
         </View>
       </View>
     </Modal>
@@ -2588,35 +2540,6 @@ const styles = StyleSheet.create({
   },
   settingsRowDark: {
     borderTopColor: '#334155',
-  },
-  settingsBackgroundBox: {
-    borderTopWidth: 1,
-    borderTopColor: '#e9ecef',
-    paddingTop: 14,
-    marginTop: 2,
-    gap: 10,
-  },
-  settingsBackgroundActions: {
-    flexDirection: 'row',
-    gap: 10,
-  },
-  settingsSmallButton: {
-    flex: 1,
-    backgroundColor: '#4361ee',
-    borderRadius: 10,
-    paddingVertical: 10,
-    alignItems: 'center',
-  },
-  settingsSmallButtonDisabled: {
-    backgroundColor: '#dee2e6',
-  },
-  settingsSmallButtonText: {
-    color: '#ffffff',
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  settingsSmallButtonTextDisabled: {
-    color: '#8a94a6',
   },
   settingsRowLabel: {
     fontSize: 16,

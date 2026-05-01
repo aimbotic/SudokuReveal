@@ -4,50 +4,38 @@ import { router, useFocusEffect } from 'expo-router';
 
 import { loadCompletedPuzzles } from '../utils/progress';
 import {
-  chooseCustomBackground,
-  clearCustomBackground,
-  loadCustomBackground,
+  getBackgroundImageSource,
+  loadSelectedBackground,
 } from '../utils/background';
 import puzzlesData from '../assets/puzzles.json';
 
 export default function HomeScreen() {
   const [completedIds, setCompletedIds] = useState([]);
-  const [customBackground, setCustomBackground] = useState(null);
+  const [backgroundSelection, setBackgroundSelection] = useState(null);
   const totalCount = puzzlesData.length;
   const completedCount = completedIds.length;
+  const backgroundSource = getBackgroundImageSource(backgroundSelection);
 
   useFocusEffect(
     useCallback(() => {
       async function fetchProgress() {
         const completed = await loadCompletedPuzzles();
-        const background = await loadCustomBackground();
+        const background = await loadSelectedBackground();
         setCompletedIds(completed);
-        setCustomBackground(background);
+        setBackgroundSelection(background);
       }
       fetchProgress();
     }, [])
   );
 
-  async function handleChooseBackground() {
-    const background = await chooseCustomBackground();
-    if (background) {
-      setCustomBackground(background);
-    }
-  }
-
-  async function handleClearBackground() {
-    await clearCustomBackground();
-    setCustomBackground(null);
-  }
-
   return (
     <ImageBackground
-      source={customBackground ? { uri: customBackground } : undefined}
+      source={backgroundSource}
       style={styles.container}
       imageStyle={styles.backgroundImage}
       resizeMode="cover"
     >
-      {customBackground && <View pointerEvents="none" style={styles.backgroundTint} />}
+      {backgroundSource && <View pointerEvents="none" style={styles.backgroundTint} />}
       <View style={styles.topSection}>
         <Text style={styles.title}>SudokuReveal</Text>
         <Text style={styles.subtitle}>Solve puzzles. Reveal images.</Text>
@@ -86,30 +74,6 @@ export default function HomeScreen() {
         >
           <Text style={styles.galleryButtonText}>View Gallery</Text>
         </TouchableOpacity>
-
-        <View style={styles.backgroundButtonRow}>
-          <TouchableOpacity
-            style={styles.backgroundButton}
-            onPress={handleChooseBackground}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.backgroundButtonText}>Pick Background</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.backgroundButton, !customBackground && styles.backgroundButtonDisabled]}
-            onPress={handleClearBackground}
-            disabled={!customBackground}
-            activeOpacity={0.8}
-          >
-            <Text style={[
-              styles.backgroundButtonText,
-              !customBackground && styles.backgroundButtonTextDisabled,
-            ]}>
-              Clear
-            </Text>
-          </TouchableOpacity>
-        </View>
 
         <TouchableOpacity
           style={styles.startButton}
@@ -171,31 +135,6 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,
-  },
-  backgroundButtonRow: {
-    flexDirection: 'row',
-    width: '100%',
-    gap: 10,
-  },
-  backgroundButton: {
-    flex: 1,
-    backgroundColor: '#ffffff',
-    paddingVertical: 14,
-    borderRadius: 14,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: '#dbe2ff',
-  },
-  backgroundButtonDisabled: {
-    opacity: 0.55,
-  },
-  backgroundButtonText: {
-    color: '#4361ee',
-    fontSize: 15,
-    fontWeight: '700',
-  },
-  backgroundButtonTextDisabled: {
-    color: '#adb5bd',
   },
   progressBarBackground: {
     width: '100%',

@@ -19,7 +19,11 @@
       }
     },
     "web": {
-      "bundler": "metro"
+      "bundler": "metro",
+      "output": "static"
+    },
+    "experiments": {
+      "baseUrl": "/SudokuReveal"
     },
     "plugins": [
       "expo-router"

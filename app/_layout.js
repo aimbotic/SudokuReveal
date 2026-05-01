@@ -5,6 +5,7 @@ export default function RootLayout() {
   return (
     <Stack
       screenOptions={{
+        headerBackVisible: false,
         headerStyle: {
           backgroundColor: '#ffffff',
         },
@@ -12,6 +13,24 @@ export default function RootLayout() {
         headerTitleStyle: {
           fontWeight: 'bold',
         },
+        headerLeft: ({ canGoBack }) => (
+          canGoBack ? (
+            <TouchableOpacity
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Go back"
+              style={{
+                minWidth: 40,
+                height: 36,
+                alignItems: 'flex-start',
+                justifyContent: 'center',
+              }}
+            >
+              <Text style={{ fontSize: 28, lineHeight: 30, color: '#4361ee' }}>{'<'}</Text>
+            </TouchableOpacity>
+          ) : null
+        ),
         headerRight: () => (
           <TouchableOpacity
             onPress={() => router.push('/settings')}
@@ -19,13 +38,13 @@ export default function RootLayout() {
             accessibilityRole="button"
             accessibilityLabel="Open settings"
             style={{
-              minWidth: 40,
+              minWidth: 72,
               height: 36,
               alignItems: 'center',
               justifyContent: 'center',
             }}
           >
-            <Text style={{ fontSize: 22, color: '#4361ee' }}>⚙</Text>
+            <Text style={{ fontSize: 14, fontWeight: '700', color: '#4361ee' }}>Settings</Text>
           </TouchableOpacity>
         ),
       }}

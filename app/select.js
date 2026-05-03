@@ -55,10 +55,12 @@ export default function SelectScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
 
-      <Text style={styles.heading}>Choose a Puzzle</Text>
-      <Text style={styles.subheading}>
-        {completedIds.length} of {puzzlesData.length} completed
-      </Text>
+      <View style={styles.header}>
+        <Text style={styles.heading}>Puzzles</Text>
+        <Text style={styles.subheading}>
+          {completedIds.length}/{puzzlesData.length} completed
+        </Text>
+      </View>
 
       <SectionList
         sections={PUZZLE_SECTIONS}
@@ -131,34 +133,36 @@ export default function SelectScreen() {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f4f6fb',
+  },
+  header: {
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 12,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
-    paddingHorizontal: 24,
-    paddingTop: 24,
-    marginBottom: 4,
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#12182f',
+    marginBottom: 2,
   },
   subheading: {
     fontSize: 14,
-    color: '#6c757d',
-    paddingHorizontal: 24,
-    marginBottom: 20,
+    color: '#667085',
+    fontWeight: '600',
   },
   list: {
-    paddingHorizontal: 16,
-    paddingBottom: 32,
-    gap: 12,
+    paddingHorizontal: 14,
+    paddingBottom: 28,
+    gap: 8,
   },
   sectionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingTop: 14,
+    paddingTop: 18,
     paddingBottom: 8,
-    paddingHorizontal: 4,
+    paddingHorizontal: 8,
   },
   sectionDot: {
     width: 10,
@@ -166,16 +170,16 @@ const styles = StyleSheet.create({
     borderRadius: 5,
   },
   sectionTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: '800',
-    color: '#1a1a2e',
+    color: '#12182f',
   },
   sectionCount: {
     marginLeft: 'auto',
     fontSize: 13,
     fontWeight: '700',
     color: '#6c757d',
-    backgroundColor: '#eef0fb',
+    backgroundColor: '#e9eefb',
     borderRadius: 10,
     overflow: 'hidden',
     paddingHorizontal: 9,
@@ -184,40 +188,40 @@ const styles = StyleSheet.create({
 
   // Card
   card: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 18,
+    backgroundColor: 'rgba(255,255,255,0.94)',
+    borderRadius: 12,
+    padding: 14,
     flexDirection: 'row',
     alignItems: 'center',
-    elevation: 2,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e7ebf3',
   },
   cardCompleted: {
-    borderColor: '#2a9d8f',
+    borderColor: '#9edbd2',
     backgroundColor: '#f0faf9',
   },
 
   // Left circle
   numberCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#eef0fb',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#edf2ff',
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 16,
+    marginRight: 14,
   },
   numberCircleCompleted: {
     backgroundColor: '#2a9d8f',
   },
   numberText: {
-    fontSize: 18,
-    fontWeight: 'bold',
+    fontSize: 16,
+    fontWeight: '900',
     color: '#4361ee',
   },
   numberTextCompleted: {
@@ -229,10 +233,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   cardTitle: {
-    fontSize: 17,
-    fontWeight: '600',
-    color: '#1a1a2e',
-    marginBottom: 6,
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#12182f',
+    marginBottom: 5,
   },
   difficultyBadge: {
     flexDirection: 'row',
@@ -251,7 +255,8 @@ const styles = StyleSheet.create({
 
   // Right arrow
   cardArrow: {
-    fontSize: 22,
+    fontSize: 16,
+    fontWeight: '800',
     color: '#adb5bd',
     marginLeft: 8,
   },

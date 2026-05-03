@@ -20,7 +20,6 @@ import { getRewardImageSource } from '../utils/rewards';
 // React Native cannot build require() paths dynamically at runtime.
 // Every image must be listed here explicitly.
 // Add a new line here whenever you add a new reward image.
-const REWARD_IMAGES = {};
 
 // ─── Build gallery item list ──────────────────────────────────────
 function buildGalleryItems() {
@@ -50,8 +49,8 @@ export default function GalleryScreen() {
   const { width }                       = useWindowDimensions();
 
   // Two columns with a gap between them
-  const gap      = 12;
-  const padding  = 16;
+  const gap      = 10;
+  const padding  = 14;
   const tileSize = (width - padding * 2 - gap) / 2;
 
   // Reload completed list every time this screen comes into focus
@@ -85,7 +84,7 @@ export default function GalleryScreen() {
         data={GALLERY_ITEMS}
         keyExtractor={(item) => item.reward}
         numColumns={2}
-        contentContainerStyle={{ padding, paddingBottom: 40 }}
+        contentContainerStyle={{ padding, paddingBottom: 34 }}
         columnWrapperStyle={{ gap }}
         ItemSeparatorComponent={() => <View style={{ height: gap }} />}
         renderItem={({ item }) => {
@@ -194,36 +193,39 @@ function FullscreenModal({ item, onClose }) {
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: '#f4f6fb',
   },
 
   // Header
   header: {
-    paddingHorizontal: 16,
-    paddingTop: 24,
-    paddingBottom: 16,
+    paddingHorizontal: 22,
+    paddingTop: 22,
+    paddingBottom: 14,
   },
   heading: {
-    fontSize: 26,
-    fontWeight: 'bold',
-    color: '#1a1a2e',
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#12182f',
     marginBottom: 4,
   },
   subheading: {
     fontSize: 14,
-    color: '#6c757d',
+    color: '#667085',
+    fontWeight: '600',
   },
 
   // Tile
   tile: {
-    borderRadius: 14,
+    borderRadius: 12,
     overflow: 'hidden',
-    backgroundColor: '#e9ecef',
-    elevation: 3,
+    backgroundColor: '#e7ebf3',
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 6,
+    shadowOpacity: 0.06,
+    shadowRadius: 4,
+    borderWidth: 1,
+    borderColor: '#e2e8f0',
   },
   tileImage: {
     width: '100%',
@@ -234,14 +236,14 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: 'rgba(0,0,0,0.45)',
-    paddingVertical: 6,
-    paddingHorizontal: 10,
+    backgroundColor: 'rgba(18,24,47,0.62)',
+    paddingVertical: 7,
+    paddingHorizontal: 9,
   },
   tileLabelText: {
     color: '#ffffff',
     fontSize: 12,
-    fontWeight: '600',
+    fontWeight: '800',
   },
 
   // Locked tile
@@ -249,14 +251,14 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#e9ecef',
+    backgroundColor: '#eef2f7',
     gap: 4,
   },
-  lockIcon: { fontSize: 28 },
+  lockIcon: { fontSize: 24, opacity: 0.7 },
   lockText: {
     fontSize: 13,
-    color: '#6c757d',
-    fontWeight: '600',
+    color: '#667085',
+    fontWeight: '800',
   },
   lockSubText: {
     fontSize: 11,

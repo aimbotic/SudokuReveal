@@ -32,12 +32,16 @@ const SETTINGS_KEY = 'puzzle_feature_settings';
 const MAX_MISTAKES = 3;
 const POINTS_PER_CORRECT = 75;
 const LINE_CLEAR_BONUS = 13000;
-const LINE_COMBO_TARGET = 3;
-const LINE_COMBO_BONUS = 15000;
 const MEGA_COMBO_TARGET = 10;
 const MEGA_COMBO_BONUS = 10000;
 const ULTIMATE_COMBO_TARGET = 15;
 const ULTIMATE_COMBO_BONUS = 50000;
+const BOT_PROFILES = {
+  easy: { name: 'Easy Bot', moveChance: 0.3, delay: 900 },
+  medium: { name: 'Medium Bot', moveChance: 0.55, delay: 720 },
+  hard: { name: 'Hard Bot', moveChance: 0.8, delay: 520 },
+  insane: { name: 'Insane Bot', moveChance: 1, delay: 300 },
+};
 const COMBO_BLOCKS = [
   { x: -92, y: -74, color: '#4cc9f0' },
   { x: -54, y: -118, color: '#4361ee' },
@@ -138,6 +142,15 @@ function isLineSolved(board, solution, type, index) {
   return true;
 }
 
+function isBoxSolved(board, solution, boxIndex) {
+  const boxRow = Math.floor(boxIndex / 3) * 3;
+  const boxCol = (boxIndex % 3) * 3;
+  for (let row = boxRow; row < boxRow + 3; row++)
+    for (let col = boxCol; col < boxCol + 3; col++)
+      if (board[row][col] !== solution[row][col]) return false;
+  return true;
+}
+
 function getSolvedLineIds(board, solution) {
   const solvedLines = [];
   for (let index = 0; index < 9; index++) {
@@ -149,6 +162,56 @@ function getSolvedLineIds(board, solution) {
     }
   }
   return solvedLines;
+}
+
+function getSolvedBoxIds(board, solution) {
+  const solvedBoxes = [];
+  for (let index = 0; index < 9; index++) {
+    if (isBoxSolved(board, solution, index)) {
+      solvedBoxes.push(`box-${index}`);
+    }
+  }
+  return solvedBoxes;
+}
+
+function getCorrectUserCellKeys(board, puzzle) {
+  const correctCells = [];
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (
+        puzzle.given[row][col] === 0 &&
+        board[row][col] !== 0 &&
+        board[row][col] === puzzle.solution[row][col]
+      ) {
+        correctCells.push(`${row}-${col}`);
+      }
+    }
+  }
+  return correctCells;
+}
+
+function getCorrectFillCount(board, puzzle) {
+  let count = 0;
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (board[row][col] === puzzle.solution[row][col]) {
+        count += 1;
+      }
+    }
+  }
+  return count;
+}
+
+function getOpenSolutionCells(board, puzzle) {
+  const cells = [];
+  for (let row = 0; row < 9; row++) {
+    for (let col = 0; col < 9; col++) {
+      if (board[row][col] !== puzzle.solution[row][col]) {
+        cells.push({ row, col });
+      }
+    }
+  }
+  return cells;
 }
 
 function hasConflict(board, row, col) {
@@ -172,20 +235,43 @@ function formatTime(totalSeconds) {
   return `${m}:${s}`;
 }
 
-function playTone(frequency, duration = 0.12, delay = 0) {
+let sharedAudioContext = null;
+
+function getAudioContext() {
   const AudioContext = globalThis.AudioContext ?? globalThis.webkitAudioContext;
   if (!AudioContext) return false;
 
+  if (!sharedAudioContext) {
+    sharedAudioContext = new AudioContext();
+  }
+
+  if (sharedAudioContext.state === 'suspended') {
+    sharedAudioContext.resume?.();
+  }
+
+  return sharedAudioContext;
+}
+
+function playTone(
+  frequency,
+  duration = 0.12,
+  delay = 0,
+  { type = 'square', gainValue = 0.07, detune = 0, attack = 0.012 } = {}
+) {
+  const audioContext = getAudioContext();
+  if (!audioContext) return false;
+
   try {
-    const audioContext = new AudioContext();
     const oscillator = audioContext.createOscillator();
     const gain = audioContext.createGain();
     const startAt = audioContext.currentTime + delay;
 
-    oscillator.type = 'square';
+    oscillator.type = type;
     oscillator.frequency.setValueAtTime(frequency, startAt);
+    oscillator.detune.setValueAtTime(detune, startAt);
     gain.gain.setValueAtTime(0.0001, startAt);
-    gain.gain.exponentialRampToValueAtTime(0.08, startAt + 0.015);
+    gain.gain.exponentialRampToValueAtTime(gainValue, startAt + attack);
+    gain.gain.exponentialRampToValueAtTime(gainValue * 0.55, startAt + duration * 0.45);
     gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
     oscillator.connect(gain);
     gain.connect(audioContext.destination);
@@ -197,90 +283,120 @@ function playTone(frequency, duration = 0.12, delay = 0) {
   }
 }
 
+function playLayeredTone(frequency, duration = 0.12, delay = 0, gainValue = 0.045) {
+  const layers = [
+    playTone(frequency, duration, delay, { type: 'triangle', gainValue }),
+    playTone(frequency * 2, duration * 0.75, delay + 0.004, { type: 'sine', gainValue: gainValue * 0.42 }),
+    playTone(frequency * 1.005, duration * 0.82, delay, { type: 'square', gainValue: gainValue * 0.25, detune: 6 }),
+  ];
+  return layers.some(Boolean);
+}
+
+function playChord(frequencies, duration = 0.18, delay = 0, gainValue = 0.04) {
+  return frequencies
+    .map((frequency, index) =>
+      playLayeredTone(frequency, duration, delay + index * 0.003, gainValue)
+    )
+    .some(Boolean);
+}
+
 function playComboSound(comboCount) {
-  const base = Math.min(comboCount, 8);
-  const played = [0, 1, 2].some((step) =>
-    playTone(360 + base * 45 + step * 120, 0.1, step * 0.055)
-  );
+  const streak = Math.max(1, Math.min(comboCount, ULTIMATE_COMBO_TARGET));
+  const climb = Math.pow(1.155, streak - 1);
+  const base = Math.min(1760, 330 * climb);
+  const sparkleDelay = 0.035 + Math.min(0.055, streak * 0.003);
+  const played = [
+    playLayeredTone(base, 0.105, 0, 0.04),
+    playLayeredTone(base * 1.25, 0.1, sparkleDelay, 0.038),
+    playLayeredTone(base * 1.5, 0.115, sparkleDelay * 2, 0.034),
+    playTone(base * 2.01, 0.065, sparkleDelay * 2.7, { type: 'sine', gainValue: 0.032 }),
+  ].some(Boolean);
   if (!played) {
-    Vibration.vibrate(25);
+    Vibration.vibrate(streak === 1 ? 18 : [0, 16, 18, 24]);
   }
 }
 
 function playComboBreakSound() {
-  const played =
-    playTone(180, 0.16, 0) ||
-    playTone(120, 0.18, 0.08);
+  const played = [
+    playTone(210, 0.18, 0, { type: 'sawtooth', gainValue: 0.07 }),
+    playTone(155, 0.2, 0.06, { type: 'sawtooth', gainValue: 0.06 }),
+    playTone(96, 0.24, 0.13, { type: 'triangle', gainValue: 0.05 }),
+    playTone(64, 0.18, 0.2, { type: 'square', gainValue: 0.035 }),
+  ].some(Boolean);
   if (!played) {
-    Vibration.vibrate([0, 35, 30, 55]);
+    Vibration.vibrate([0, 50, 28, 90]);
   }
 }
 
 function playLineClearSound() {
-  const notes = [392, 523, 659, 784, 988, 1175];
+  const notes = [523, 659, 784, 988, 1175, 1568, 1976];
   const played = notes
-    .map((frequency, index) => playTone(frequency, 0.13, index * 0.055))
+    .map((frequency, index) => playLayeredTone(frequency, 0.14, index * 0.043, 0.038))
     .some(Boolean);
 
-  playTone(523, 0.28, 0.34);
-  playTone(784, 0.28, 0.34);
+  playChord([392, 523, 659, 988], 0.32, 0.3, 0.035);
+  playTone(2349, 0.12, 0.42, { type: 'sine', gainValue: 0.036 });
 
   if (!played) {
-    Vibration.vibrate([0, 25, 18, 25, 18, 55]);
+    Vibration.vibrate([0, 22, 18, 32, 18, 72]);
   }
 }
 
-function playLineComboSound() {
-  const notes = [440, 554, 659, 880, 1108, 1318, 1760];
+function playBoxCompleteSound() {
+  const notes = [440, 554, 659, 880, 1108, 1318];
   const played = notes
-    .map((frequency, index) => playTone(frequency, 0.14, index * 0.045))
+    .map((frequency, index) => playLayeredTone(frequency, 0.115, index * 0.045, 0.038))
     .some(Boolean);
 
-  playTone(330, 0.32, 0.24);
-  playTone(660, 0.32, 0.24);
-  playTone(990, 0.32, 0.24);
+  playChord([554, 659, 880, 1318], 0.3, 0.24, 0.04);
+  playTone(1760, 0.15, 0.36, { type: 'sine', gainValue: 0.035 });
 
   if (!played) {
-    Vibration.vibrate([0, 30, 18, 30, 18, 80]);
+    Vibration.vibrate([0, 24, 18, 44, 18, 80]);
   }
 }
 
 function playMegaBonusSound() {
   const notes = [
-    523, 659, 784, 1046,
-    784, 1046, 1318, 1568,
-    1046, 1318, 1568, 2093,
+    523, 659, 784, 1046, 1318,
+    784, 1046, 1318, 1568, 2093,
+    1046, 1318, 1568, 2093, 2637,
   ];
   const played = notes
-    .map((frequency, index) => playTone(frequency, 0.16, index * 0.07))
+    .map((frequency, index) => playLayeredTone(frequency, 0.15, index * 0.048, 0.04))
     .some(Boolean);
 
-  playTone(262, 0.55, 0.88);
-  playTone(392, 0.55, 0.88);
-  playTone(523, 0.55, 0.88);
-  playTone(784, 0.55, 0.88);
+  [262, 330, 392, 523, 659, 784, 1046].forEach((frequency, index) => {
+    playTone(frequency, 0.62, 0.74 + index * 0.018, { type: 'triangle', gainValue: 0.034 });
+  });
+  [1568, 1976, 2637, 3136].forEach((frequency, index) => {
+    playTone(frequency, 0.12, 0.88 + index * 0.055, { type: 'sine', gainValue: 0.038 });
+  });
 
   if (!played) {
-    Vibration.vibrate([0, 35, 25, 35, 25, 70, 30, 110]);
+    Vibration.vibrate([0, 28, 18, 28, 18, 58, 24, 92, 28, 130]);
   }
 }
 
 function playUltimateComboSound() {
   const notes = [
-    392, 523, 659, 784, 1046,
-    659, 784, 1046, 1318, 1568,
-    1046, 1318, 1568, 2093, 2637,
+    392, 523, 659, 784, 988, 1175,
+    659, 784, 988, 1175, 1568, 1976,
+    1046, 1318, 1568, 2093, 2637, 3136,
   ];
   const played = notes
-    .map((frequency, index) => playTone(frequency, 0.17, index * 0.055))
+    .map((frequency, index) => playLayeredTone(frequency, 0.145, index * 0.037, 0.04))
     .some(Boolean);
 
-  [196, 294, 392, 587, 784, 1175].forEach((frequency, index) => {
-    playTone(frequency, 0.72, 0.72 + index * 0.035);
+  [196, 294, 392, 587, 784, 1175, 1568].forEach((frequency, index) => {
+    playTone(frequency, 0.82, 0.7 + index * 0.026, { type: 'triangle', gainValue: 0.034 });
+  });
+  [2093, 2637, 3136, 3951, 4186, 5274].forEach((frequency, index) => {
+    playTone(frequency, 0.1, 0.92 + index * 0.045, { type: 'sine', gainValue: 0.034 });
   });
 
   if (!played) {
-    Vibration.vibrate([0, 45, 20, 45, 20, 90, 30, 140, 30, 190]);
+    Vibration.vibrate([0, 35, 18, 35, 18, 75, 24, 120, 28, 170, 32, 220]);
   }
 }
 
@@ -306,12 +422,19 @@ async function saveFeatureSettings(settings) {
 // ─── Main Screen ─────────────────────────────────────────────────
 
 export default function PuzzleScreen() {
-  const { id } = useLocalSearchParams();
+  const { id, mode, room, bot } = useLocalSearchParams();
   const puzzle = puzzlesData.find((p) => p.id === id);
+  const isOnlineRace = mode === 'race';
+  const isBotBattle = mode === 'bot';
+  const botDifficulty = BOT_PROFILES[bot] ? bot : 'easy';
+  const botProfile = BOT_PROFILES[botDifficulty];
+  const isProgressMode = !isOnlineRace && !isBotBattle;
+  const roomCode = typeof room === 'string' ? room : 'QUICK';
 
   // All null until we load from storage —
   // prevents a flash of empty grid before data arrives
   const [board, setBoard]               = useState(null);
+  const [botBoard, setBotBoard]         = useState(null);
   const [notes, setNotes]               = useState(null);
   const [undoStack, setUndoStack]       = useState(null);
   const [seconds, setSeconds]           = useState(null);
@@ -319,7 +442,7 @@ export default function PuzzleScreen() {
   const [hintsUsed, setHintsUsed]       = useState(0);
   const [score, setScore]               = useState(0);
   const [completedLines, setCompletedLines] = useState([]);
-  const [lineComboCount, setLineComboCount] = useState(0);
+  const [completedBoxes, setCompletedBoxes] = useState([]);
   const [ultimateComboCount, setUltimateComboCount] = useState(0);
   const [isLoaded, setIsLoaded]         = useState(false);
 
@@ -328,6 +451,9 @@ export default function PuzzleScreen() {
   const [isPaused, setIsPaused]         = useState(false);
   const [isAdOpen, setIsAdOpen]         = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [isRaceShielded, setIsRaceShielded] = useState(false);
+  const [isBotThinking, setIsBotThinking] = useState(false);
+  const [botResult, setBotResult]       = useState(null);
   const [featureSettings, setFeatureSettings] = useState(DEFAULT_FEATURE_SETTINGS);
   const [backgroundSelection, setBackgroundSelection] = useState(null);
   const [isSolved, setIsSolved]         = useState(false);
@@ -338,20 +464,27 @@ export default function PuzzleScreen() {
   const [cellFeedback, setCellFeedback] = useState(null);
   const [cellFeedbackCombo, setCellFeedbackCombo] = useState(1);
   const [lineClearFeedback, setLineClearFeedback] = useState(null);
-  const [lineComboDisplay, setLineComboDisplay] = useState(null);
+  const [boxCompleteDisplay, setBoxCompleteDisplay] = useState(null);
   const [isMegaParty, setIsMegaParty]   = useState(false);
   const [isUltimateParty, setIsUltimateParty] = useState(false);
   const timerRef                        = useRef(null);
+  const botMoveTimerRef                 = useRef(null);
   const comboAnim                       = useRef(new Animated.Value(0)).current;
   const comboBreakAnim                  = useRef(new Animated.Value(0)).current;
   const correctCellAnim                 = useRef(new Animated.Value(0)).current;
   const wrongCellAnim                   = useRef(new Animated.Value(0)).current;
   const lineClearAnim                   = useRef(new Animated.Value(0)).current;
-  const lineComboAnim                   = useRef(new Animated.Value(0)).current;
+  const boxCompleteAnim                 = useRef(new Animated.Value(0)).current;
   const megaPartyAnim                   = useRef(new Animated.Value(0)).current;
   const ultimatePartyAnim               = useRef(new Animated.Value(0)).current;
   const isDarkMode                      = featureSettings.darkMode;
   const backgroundSource                = getBackgroundImageSource(backgroundSelection);
+  const revealedBackgroundCells         =
+    board && puzzle ? getCorrectUserCellKeys(board, puzzle) : [];
+  const playerFillCount                 =
+    board && puzzle ? getCorrectFillCount(board, puzzle) : 0;
+  const botFillCount                    =
+    botBoard && puzzle ? getCorrectFillCount(botBoard, puzzle) : 0;
 
   useFocusEffect(
     useCallback(() => {
@@ -363,6 +496,42 @@ export default function PuzzleScreen() {
     }, [])
   );
 
+  useEffect(() => {
+    if (!isOnlineRace) return;
+
+    function handleHiddenChange() {
+      if (typeof document !== 'undefined') {
+        setIsRaceShielded(document.hidden);
+      }
+    }
+
+    function handleBlur() {
+      setIsRaceShielded(true);
+    }
+
+    function handleFocus() {
+      setIsRaceShielded(false);
+    }
+
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleHiddenChange);
+    }
+    if (typeof window !== 'undefined') {
+      window.addEventListener('blur', handleBlur);
+      window.addEventListener('focus', handleFocus);
+    }
+
+    return () => {
+      if (typeof document !== 'undefined') {
+        document.removeEventListener('visibilitychange', handleHiddenChange);
+      }
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('blur', handleBlur);
+        window.removeEventListener('focus', handleFocus);
+      }
+    };
+  }, [isOnlineRace]);
+
   // ── Restore saved state on mount ─────────────────────────────
   useEffect(() => {
     if (!puzzle) return;
@@ -370,18 +539,21 @@ export default function PuzzleScreen() {
     setIsPaused(false);
     setIsSolved(false);
     setIsFailed(false);
+    setBotResult(null);
+    setIsBotThinking(false);
+    clearTimeout(botMoveTimerRef.current);
     setComboCount(0);
     setComboDisplay(null);
     setIsComboBroken(false);
     setCellFeedback(null);
     setCellFeedbackCombo(1);
     setLineClearFeedback(null);
-    setLineComboDisplay(null);
+    setBoxCompleteDisplay(null);
     setIsMegaParty(false);
     setIsUltimateParty(false);
 
     async function restore() {
-      const saved = await loadBoardState(puzzle.id);
+      const saved = isProgressMode ? await loadBoardState(puzzle.id) : null;
       const settings = await loadFeatureSettings();
       setFeatureSettings(settings);
       if (!settings.notes) {
@@ -389,6 +561,7 @@ export default function PuzzleScreen() {
       }
       if (saved) {
         setBoard(saved.board);
+        setBotBoard(copyGrid(puzzle.given));
         setNotes(saved.notes ?? createEmptyNotes());
         setUndoStack(saved.undoStack);
         setSeconds(saved.seconds);
@@ -396,10 +569,11 @@ export default function PuzzleScreen() {
         setHintsUsed(saved.hintsUsed ?? 0);
         setScore(saved.score ?? 0);
         setCompletedLines(saved.completedLines ?? getSolvedLineIds(saved.board, puzzle.solution));
-        setLineComboCount(saved.lineComboCount ?? 0);
+        setCompletedBoxes(saved.completedBoxes ?? getSolvedBoxIds(saved.board, puzzle.solution));
         setUltimateComboCount(saved.ultimateComboCount ?? 0);
       } else {
         setBoard(copyGrid(puzzle.given));
+        setBotBoard(copyGrid(puzzle.given));
         setNotes(createEmptyNotes());
         setUndoStack([]);
         setSeconds(0);
@@ -407,13 +581,13 @@ export default function PuzzleScreen() {
         setHintsUsed(0);
         setScore(0);
         setCompletedLines([]);
-        setLineComboCount(0);
+        setCompletedBoxes([]);
         setUltimateComboCount(0);
       }
       setIsLoaded(true);
     }
     restore();
-  }, [puzzle?.id]);
+  }, [puzzle?.id, isProgressMode]);
 
   // ── Start timer after load ────────────────────────────────────
   useEffect(() => {
@@ -429,20 +603,58 @@ export default function PuzzleScreen() {
     if (isSolved || isFailed) clearInterval(timerRef.current);
   }, [isSolved, isFailed]);
 
+  useEffect(() => () => clearTimeout(botMoveTimerRef.current), []);
+
   // ── Cell selection ────────────────────────────────────────────
   if (!puzzle) {
     return <Redirect href="/select" />;
   }
 
   function handleCellPress(row, col) {
+    if (isBotThinking) return;
     setSelectedCell({ row, col });
   }
 
-  function triggerComboEffect(nextComboCount, pointsEarned, megaBonus) {
-    setComboDisplay({ count: nextComboCount, pointsEarned, megaBonus });
+  function takeBotTurn(currentBotBoard = botBoard) {
+    if (!isBotBattle || !currentBotBoard || isSolved || isFailed || botResult !== null) return;
+
+    setIsBotThinking(true);
+    clearTimeout(botMoveTimerRef.current);
+    botMoveTimerRef.current = setTimeout(() => {
+      setBotBoard((latestBotBoard) => {
+        if (!latestBotBoard || Math.random() > botProfile.moveChance) {
+          setIsBotThinking(false);
+          return latestBotBoard;
+        }
+
+        const openCells = getOpenSolutionCells(latestBotBoard, puzzle);
+        if (openCells.length === 0) {
+          setIsBotThinking(false);
+          setBotResult('bot');
+          setIsFailed(true);
+          return latestBotBoard;
+        }
+
+        const cell = openCells[Math.floor(Math.random() * openCells.length)];
+        const nextBotBoard = copyGrid(latestBotBoard);
+        nextBotBoard[cell.row][cell.col] = puzzle.solution[cell.row][cell.col];
+
+        if (isBoardSolved(nextBotBoard, puzzle.solution)) {
+          setBotResult('bot');
+          setIsFailed(true);
+        }
+
+        setIsBotThinking(false);
+        return nextBotBoard;
+      });
+    }, botProfile.delay);
+  }
+
+  function triggerComboEffect(nextComboCount, pointsEarned, megaBonus, soundComboCount = nextComboCount) {
+    setComboDisplay({ count: soundComboCount, pointsEarned, megaBonus });
     comboAnim.stopAnimation();
     comboAnim.setValue(0);
-    playComboSound(nextComboCount);
+    playComboSound(soundComboCount);
     Animated.sequence([
       Animated.timing(comboAnim, {
         toValue: 0.18,
@@ -511,25 +723,25 @@ export default function PuzzleScreen() {
     }).start(() => setLineClearFeedback(null));
   }
 
-  function triggerLineComboEffect(lineCount, bonusPoints) {
-    setLineComboDisplay({ lineCount, bonusPoints });
-    lineComboAnim.stopAnimation();
-    lineComboAnim.setValue(0);
-    playLineComboSound();
+  function triggerBoxCompleteEffect(boxNumber) {
+    setBoxCompleteDisplay({ boxNumber });
+    boxCompleteAnim.stopAnimation();
+    boxCompleteAnim.setValue(0);
+    playBoxCompleteSound();
     Animated.sequence([
-      Animated.timing(lineComboAnim, {
+      Animated.timing(boxCompleteAnim, {
         toValue: 0.18,
         duration: 80,
         easing: Easing.out(Easing.quad),
         useNativeDriver: true,
       }),
-      Animated.timing(lineComboAnim, {
+      Animated.timing(boxCompleteAnim, {
         toValue: 1,
         duration: 900,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true,
       }),
-    ]).start(() => setLineComboDisplay(null));
+    ]).start(() => setBoxCompleteDisplay(null));
   }
 
   function triggerRewardEffectsInPointOrder(rewards) {
@@ -577,25 +789,30 @@ export default function PuzzleScreen() {
     if (feature === 'mistakeCounting' && !value) {
       setMistakes(0);
       setIsFailed(false);
-      await saveBoardState(puzzle.id, {
-        board,
-        notes,
-        undoStack,
-        seconds,
-        mistakes: 0,
-        hintsUsed,
-        score,
-        completedLines,
-        lineComboCount,
-        ultimateComboCount,
-      });
+      if (isProgressMode) {
+        await saveBoardState(puzzle.id, {
+          board,
+          notes,
+          undoStack,
+          seconds,
+          mistakes: 0,
+          hintsUsed,
+          score,
+          completedLines,
+          completedBoxes,
+          ultimateComboCount,
+        });
+      }
     }
   }
 
   // ── Number input ──────────────────────────────────────────────
   async function restartCurrentPuzzle() {
-    await clearBoardState(puzzle.id);
+    if (isProgressMode) {
+      await clearBoardState(puzzle.id);
+    }
     setBoard(copyGrid(puzzle.given));
+    setBotBoard(copyGrid(puzzle.given));
     setNotes(createEmptyNotes());
     setUndoStack([]);
     setSeconds(0);
@@ -603,19 +820,22 @@ export default function PuzzleScreen() {
     setHintsUsed(0);
     setScore(0);
     setCompletedLines([]);
-    setLineComboCount(0);
+    setCompletedBoxes([]);
     setUltimateComboCount(0);
     setSelectedCell(null);
     setIsNoteMode(false);
     setIsPaused(false);
     setIsFailed(false);
+    setBotResult(null);
+    setIsBotThinking(false);
+    clearTimeout(botMoveTimerRef.current);
     setComboCount(0);
     setComboDisplay(null);
     setIsComboBroken(false);
     setCellFeedback(null);
     setCellFeedbackCombo(1);
     setLineClearFeedback(null);
-    setLineComboDisplay(null);
+    setBoxCompleteDisplay(null);
     setIsMegaParty(false);
     setIsUltimateParty(false);
   }
@@ -669,22 +889,29 @@ export default function PuzzleScreen() {
     setHintsUsed(newHintsUsed);
     setSelectedCell({ row, col });
 
-    await saveBoardState(puzzle.id, {
-      board: newBoard,
-      notes: newNotes,
-      undoStack: newUndoStack,
-      seconds,
-      mistakes,
-      hintsUsed: newHintsUsed,
-      score,
-      completedLines,
-      lineComboCount,
-      ultimateComboCount,
-    });
+    if (isProgressMode) {
+      await saveBoardState(puzzle.id, {
+        board: newBoard,
+        notes: newNotes,
+        undoStack: newUndoStack,
+        seconds,
+        mistakes,
+        hintsUsed: newHintsUsed,
+        score,
+        completedLines,
+        completedBoxes,
+        ultimateComboCount,
+      });
+    }
 
     if (isBoardSolved(newBoard, puzzle.solution)) {
-      await markPuzzleCompleted(puzzle.id);
-      await clearBoardState(puzzle.id);
+      if (isProgressMode) {
+        await markPuzzleCompleted(puzzle.id);
+        await clearBoardState(puzzle.id);
+      }
+      if (isBotBattle) {
+        setBotResult('player');
+      }
       setIsSolved(true);
     }
   }
@@ -706,6 +933,7 @@ export default function PuzzleScreen() {
   }
 
   async function handleNumberPress(number) {
+    if (isBotThinking || botResult !== null) return;
     if (selectedCell === null) return;
     const { row, col } = selectedCell;
     if (puzzle.given[row][col] !== 0) return;
@@ -723,7 +951,6 @@ export default function PuzzleScreen() {
     let newBoard = board;
     let newNotes = notes;
     let newMistakes = mistakes;
-    let newLineComboCount = lineComboCount;
     let newUltimateComboCount = ultimateComboCount;
     const isAnswerEntry = !(featureSettings.notes && isNoteMode && prevValue === 0);
     const isCorrectAnswer = number !== 0 && number === puzzle.solution[row][col];
@@ -734,6 +961,7 @@ export default function PuzzleScreen() {
       prevValue !== puzzle.solution[row][col];
     let newScore = score;
     let newCompletedLines = completedLines;
+    let newCompletedBoxes = completedBoxes;
 
     if (!isAnswerEntry) {
       newNotes = copyNotes(notes);
@@ -793,24 +1021,23 @@ export default function PuzzleScreen() {
               !completedLines.includes(line.id) &&
               isLineSolved(newBoard, puzzle.solution, line.type, line.index)
           );
+          const boxIndex = Math.floor(row / 3) * 3 + Math.floor(col / 3);
+          const newlyCompletedBoxes = !completedBoxes.includes(`box-${boxIndex}`) &&
+            isBoxSolved(newBoard, puzzle.solution, boxIndex)
+            ? [{ index: boxIndex, id: `box-${boxIndex}` }]
+            : [];
           const lineBonus = newlyCompletedLines.length * LINE_CLEAR_BONUS;
-          let lineComboBonus = 0;
-          if (newlyCompletedLines.length > 0) {
-            const earnedLineCount = newLineComboCount + newlyCompletedLines.length;
-            lineComboBonus =
-              earnedLineCount >= LINE_COMBO_TARGET ? LINE_COMBO_BONUS : 0;
-            newLineComboCount = earnedLineCount % LINE_COMBO_TARGET;
-          }
           newScore += pointsEarned + megaBonus + ultimateBonus;
           newScore += lineBonus;
-          newScore += lineComboBonus;
           setScore(newScore);
           setComboCount(nextComboCount === MEGA_COMBO_TARGET ? 0 : nextComboCount);
           if (isUltimateBonus) {
             newUltimateComboCount = 0;
           }
           setUltimateComboCount(newUltimateComboCount);
-          setLineComboCount(newLineComboCount);
+          const soundComboCount = isUltimateBonus
+            ? ULTIMATE_COMBO_TARGET
+            : newUltimateComboCount;
           if (newlyCompletedLines.length > 0) {
             newCompletedLines = [
               ...completedLines,
@@ -818,10 +1045,17 @@ export default function PuzzleScreen() {
             ];
             setCompletedLines(newCompletedLines);
           }
+          if (newlyCompletedBoxes.length > 0) {
+            newCompletedBoxes = [
+              ...completedBoxes,
+              ...newlyCompletedBoxes.map((box) => box.id),
+            ];
+            setCompletedBoxes(newCompletedBoxes);
+          }
           triggerRewardEffectsInPointOrder([
-            nextComboCount >= 2 && {
+            {
               points: pointsEarned,
-              trigger: () => triggerComboEffect(nextComboCount, pointsEarned, 0),
+              trigger: () => triggerComboEffect(nextComboCount, pointsEarned, 0, soundComboCount),
             },
             nextComboCount === MEGA_COMBO_TARGET && {
               points: MEGA_COMBO_BONUS,
@@ -831,9 +1065,9 @@ export default function PuzzleScreen() {
               points: lineBonus,
               trigger: () => triggerLineClearEffect(newlyCompletedLines, lineBonus),
             },
-            lineComboBonus > 0 && {
-              points: lineComboBonus,
-              trigger: () => triggerLineComboEffect(LINE_COMBO_TARGET, lineComboBonus),
+            newlyCompletedBoxes.length > 0 && {
+              points: lineBonus + 1,
+              trigger: () => triggerBoxCompleteEffect(newlyCompletedBoxes[0].index + 1),
             },
             isUltimateBonus && {
               points: ULTIMATE_COMBO_BONUS,
@@ -843,41 +1077,50 @@ export default function PuzzleScreen() {
         }
       } else if (isWrongAnswer) {
         triggerCellFeedback(row, col, 'wrong');
-        if (comboCount > 0 || lineComboCount > 0 || ultimateComboCount > 0) {
+        if (comboCount > 0 || ultimateComboCount > 0) {
           triggerComboBreakEffect();
         }
         setComboCount(0);
-        setLineComboCount(0);
         setUltimateComboCount(0);
-        newLineComboCount = 0;
         newUltimateComboCount = 0;
       }
     }
 
-    if (featureSettings.mistakeCounting && newMistakes >= MAX_MISTAKES) {
-      await clearBoardState(puzzle.id);
+    if (!isBotBattle && featureSettings.mistakeCounting && newMistakes >= MAX_MISTAKES) {
+      if (isProgressMode) {
+        await clearBoardState(puzzle.id);
+      }
       setIsFailed(true);
       return;
     }
 
-    // Save after every move so closing the app loses nothing
-    await saveBoardState(puzzle.id, {
-      board: newBoard,
-      notes: newNotes,
-      undoStack: newUndoStack,
-      seconds,
-      mistakes: newMistakes,
-      hintsUsed,
-      score: newScore,
-      completedLines: newCompletedLines,
-      lineComboCount: newLineComboCount,
-      ultimateComboCount: newUltimateComboCount,
-    });
+    // Save offline games after every move so closing the app loses nothing.
+    if (isProgressMode) {
+      await saveBoardState(puzzle.id, {
+        board: newBoard,
+        notes: newNotes,
+        undoStack: newUndoStack,
+        seconds,
+        mistakes: newMistakes,
+        hintsUsed,
+        score: newScore,
+        completedLines: newCompletedLines,
+        completedBoxes: newCompletedBoxes,
+        ultimateComboCount: newUltimateComboCount,
+      });
+    }
 
     if (isBoardSolved(newBoard, puzzle.solution)) {
-      await markPuzzleCompleted(puzzle.id);
-      await clearBoardState(puzzle.id);
+      if (isProgressMode) {
+        await markPuzzleCompleted(puzzle.id);
+        await clearBoardState(puzzle.id);
+      }
+      if (isBotBattle) {
+        setBotResult('player');
+      }
       setIsSolved(true);
+    } else if (isBotBattle && isAnswerEntry && number !== 0) {
+      takeBotTurn(botBoard);
     }
   }
 
@@ -902,18 +1145,20 @@ export default function PuzzleScreen() {
     setUndoStack(newUndoStack);
     setSelectedCell({ row: lastMove.row, col: lastMove.col });
 
-    await saveBoardState(puzzle.id, {
-      board: newBoard,
-      notes: newNotes,
-      undoStack: newUndoStack,
-      seconds,
-      mistakes,
-      hintsUsed,
-      score,
-      completedLines,
-      lineComboCount,
-      ultimateComboCount,
-    });
+    if (isProgressMode) {
+      await saveBoardState(puzzle.id, {
+        board: newBoard,
+        notes: newNotes,
+        undoStack: newUndoStack,
+        seconds,
+        mistakes,
+        hintsUsed,
+        score,
+        completedLines,
+        completedBoxes,
+        ultimateComboCount,
+      });
+    }
   }
 
   // ── Loading screen ────────────────────────────────────────────
@@ -930,29 +1175,34 @@ export default function PuzzleScreen() {
   // ── Main render ───────────────────────────────────────────────
   return (
     <SafeAreaView style={[styles.safeArea, isDarkMode && styles.safeAreaDark]}>
-      <ImageBackground
-        source={backgroundSource}
-        style={styles.screenBackground}
-        imageStyle={styles.gameBackgroundImage}
-        resizeMode="cover"
-      >
-      {backgroundSource && (
-        <View
-          pointerEvents="none"
-          style={[
-            styles.gameBackgroundTint,
-            isDarkMode && styles.gameBackgroundTintDark,
-          ]}
-        />
-      )}
+      <View style={styles.screenBackground}>
       <View style={[styles.container, isDarkMode && styles.containerDark]}>
 
         {/* Header — title on the left, timer on the right */}
+        <View style={styles.topControlsBand}>
+        {isOnlineRace && (
+          <View style={styles.raceBanner}>
+            <Text style={styles.raceBannerTitle}>Race Room {roomCode}</Text>
+            <Text style={styles.raceBannerText}>First full board wins</Text>
+          </View>
+        )}
+        {isBotBattle && (
+          <View style={styles.raceBanner}>
+            <Text style={styles.raceBannerTitle}>{botProfile.name}</Text>
+            <Text style={styles.raceBannerText}>
+              You {playerFillCount}/81  Bot {botFillCount}/81
+            </Text>
+          </View>
+        )}
         <View style={styles.header}>
           <View style={styles.headerInfo}>
             <Text style={[styles.heading, isDarkMode && styles.headingDark]}>{puzzle.title}</Text>
             <Text style={[styles.difficulty, isDarkMode && styles.subtleTextDark]}>{puzzle.difficulty}</Text>
-            {featureSettings.mistakeCounting && (
+            {isBotBattle ? (
+              <Text style={styles.mistakeCounter}>
+                {isBotThinking ? 'Bot thinking...' : 'Mistakes unlimited'}
+              </Text>
+            ) : featureSettings.mistakeCounting && (
               <Text style={styles.mistakeCounter}>
                 Errors {mistakes}/{MAX_MISTAKES}
               </Text>
@@ -994,12 +1244,15 @@ export default function PuzzleScreen() {
             </TouchableOpacity>
           </View>
         </View>
+        </View>
 
         {/* 9×9 grid */}
         <SudokuGrid
           puzzle={puzzle}
           board={board}
           notes={notes}
+          backgroundSource={backgroundSource}
+          revealedBackgroundCells={revealedBackgroundCells}
           selectedCell={selectedCell}
           isDarkMode={isDarkMode}
           cellFeedback={cellFeedback}
@@ -1022,103 +1275,123 @@ export default function PuzzleScreen() {
           ultimatePartyAnim={ultimatePartyAnim}
           lineClearFeedback={lineClearFeedback}
           lineClearAnim={lineClearAnim}
-          lineComboDisplay={lineComboDisplay}
-          lineComboAnim={lineComboAnim}
+          boxCompleteDisplay={boxCompleteDisplay}
+          boxCompleteAnim={boxCompleteAnim}
         />
 
-        {/* Undo button */}
-        <View style={styles.actionRow}>
-          <TouchableOpacity
-            style={[
-                  styles.actionButton,
-                  isDarkMode && styles.controlDark,
-                  (!featureSettings.undo || undoStack.length === 0) && styles.actionButtonDisabled,
-            ]}
-            onPress={handleUndo}
-            disabled={!featureSettings.undo || undoStack.length === 0}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.actionButtonIcon}>↩</Text>
-            <Text style={[
-              styles.actionButtonLabel,
-              (!featureSettings.undo || undoStack.length === 0) && styles.actionButtonLabelDisabled,
-            ]}>
-              Undo
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-              styles.actionButton,
-              isDarkMode && styles.controlDark,
-              (!featureSettings.hints || !getHintCell()) && styles.actionButtonDisabled,
-            ]}
-            onPress={handleHintPress}
-            disabled={!featureSettings.hints || !getHintCell()}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.actionButtonIcon,
-              !featureSettings.hints && styles.actionButtonLabelDisabled,
-            ]}>
-              Hint
-            </Text>
-            <Text style={[
-              styles.actionButtonLabel,
-              !featureSettings.hints && styles.actionButtonLabelDisabled,
-            ]}>
-              {hintsUsed === 0 ? 'Free' : 'Ad'}
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[
-                  styles.actionButton,
-                  isDarkMode && styles.controlDark,
-                  featureSettings.notes && isNoteMode && styles.actionButtonActive,
-              !featureSettings.notes && styles.actionButtonDisabled,
-            ]}
-            onPress={() => {
-              if (featureSettings.notes) {
-                setIsNoteMode((active) => !active);
-              }
-            }}
-            disabled={!featureSettings.notes}
-            activeOpacity={0.7}
-          >
-            <Text style={[
-              styles.actionButtonIcon,
-              featureSettings.notes && isNoteMode && styles.actionButtonActiveText,
-              !featureSettings.notes && styles.actionButtonLabelDisabled,
-            ]}>
-              Notes
-            </Text>
-            <Text style={[
-              styles.actionButtonLabel,
-              featureSettings.notes && isNoteMode && styles.actionButtonActiveText,
-              !featureSettings.notes && styles.actionButtonLabelDisabled,
-            ]}>
-              {featureSettings.notes && isNoteMode ? 'On' : 'Off'}
-            </Text>
-          </TouchableOpacity>
+        <View style={styles.bottomControlsBand}>
+          {/* Undo button */}
+          <View style={styles.actionRow}>
+            <TouchableOpacity
+              style={[
+                    styles.actionButton,
+                    isDarkMode && styles.controlDark,
+                    (!featureSettings.undo || undoStack.length === 0) && styles.actionButtonDisabled,
+              ]}
+              onPress={handleUndo}
+              disabled={!featureSettings.undo || undoStack.length === 0}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.actionButtonIcon}>↩</Text>
+              <Text style={[
+                styles.actionButtonLabel,
+                (!featureSettings.undo || undoStack.length === 0) && styles.actionButtonLabelDisabled,
+              ]}>
+                Undo
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isDarkMode && styles.controlDark,
+                (!featureSettings.hints || !getHintCell()) && styles.actionButtonDisabled,
+              ]}
+              onPress={handleHintPress}
+              disabled={!featureSettings.hints || !getHintCell()}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.actionButtonIcon,
+                !featureSettings.hints && styles.actionButtonLabelDisabled,
+              ]}>
+                Hint
+              </Text>
+              <Text style={[
+                styles.actionButtonLabel,
+                !featureSettings.hints && styles.actionButtonLabelDisabled,
+              ]}>
+                {hintsUsed === 0 ? 'Free' : 'Ad'}
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                    styles.actionButton,
+                    isDarkMode && styles.controlDark,
+                    featureSettings.notes && isNoteMode && styles.actionButtonActive,
+                !featureSettings.notes && styles.actionButtonDisabled,
+              ]}
+              onPress={() => {
+                if (featureSettings.notes) {
+                  setIsNoteMode((active) => !active);
+                }
+              }}
+              disabled={!featureSettings.notes}
+              activeOpacity={0.7}
+            >
+              <Text style={[
+                styles.actionButtonIcon,
+                featureSettings.notes && isNoteMode && styles.actionButtonActiveText,
+                !featureSettings.notes && styles.actionButtonLabelDisabled,
+              ]}>
+                Notes
+              </Text>
+              <Text style={[
+                styles.actionButtonLabel,
+                featureSettings.notes && isNoteMode && styles.actionButtonActiveText,
+                !featureSettings.notes && styles.actionButtonLabelDisabled,
+              ]}>
+                {featureSettings.notes && isNoteMode ? 'On' : 'Off'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* 1–9 number pad + erase */}
+          <NumberPad
+            isNoteMode={isNoteMode}
+            isNoteFeatureEnabled={featureSettings.notes}
+            isDarkMode={isDarkMode}
+            onNumberPress={handleNumberPress}
+          />
         </View>
-
-        {/* 1–9 number pad + erase */}
-        <NumberPad
-          isNoteMode={isNoteMode}
-          isNoteFeatureEnabled={featureSettings.notes}
-          isDarkMode={isDarkMode}
-          onNumberPress={handleNumberPress}
-        />
 
       </View>
 
-      </ImageBackground>
+      </View>
 
       {/* Win modal — appears on top when puzzle is solved */}
       <WinModal
-        visible={isSolved}
+        visible={isSolved && !isBotBattle}
         time={formatTime(seconds)}
-        onReveal={() => router.replace(`/completion?id=${puzzle.id}`)}
+        isRaceMode={isOnlineRace}
+        onReveal={() => {
+          if (isOnlineRace) {
+            router.replace('/online');
+          } else {
+            router.replace(`/completion?id=${puzzle.id}`);
+          }
+        }}
       />
+
+      <BotResultModal
+        visible={isBotBattle && botResult !== null}
+        didPlayerWin={botResult === 'player'}
+        botName={botProfile.name}
+        time={formatTime(seconds)}
+        onRestart={restartCurrentPuzzle}
+        onChooseBot={() => router.replace('/bot')}
+      />
+
+      <RacePrivacyShield visible={isOnlineRace && isRaceShielded && !isSolved && !isFailed} />
 
       <SettingsModal
         visible={isSettingsOpen}
@@ -1143,7 +1416,7 @@ export default function PuzzleScreen() {
       />
 
       <FailedModal
-        visible={isFailed}
+        visible={isFailed && !isBotBattle}
         onRestart={restartCurrentPuzzle}
       />
 
@@ -1255,8 +1528,8 @@ function ComboEffects({
   ultimatePartyAnim,
   lineClearFeedback,
   lineClearAnim,
-  lineComboDisplay,
-  lineComboAnim,
+  boxCompleteDisplay,
+  boxCompleteAnim,
 }) {
   const comboInfo = comboCount;
   const comboNumber = comboInfo?.count ?? null;
@@ -1292,11 +1565,11 @@ function ComboEffects({
     inputRange: [0, 0.2, 1],
     outputRange: [0.78, 1.08, 1.12],
   });
-  const lineComboOpacity = lineComboAnim.interpolate({
+  const boxCompleteOpacity = boxCompleteAnim.interpolate({
     inputRange: [0, 0.12, 0.86, 1],
     outputRange: [0, 1, 1, 0],
   });
-  const lineComboScale = lineComboAnim.interpolate({
+  const boxCompleteScale = boxCompleteAnim.interpolate({
     inputRange: [0, 0.18, 1],
     outputRange: [0.7, 1.16, 1.22],
   });
@@ -1378,19 +1651,17 @@ function ComboEffects({
         );
       })}
 
-      {lineComboDisplay !== null && (
+      {boxCompleteDisplay !== null && (
         <Animated.View
           style={[
-            styles.lineComboBadge,
+            styles.boxCompleteBadge,
             {
-              opacity: lineComboOpacity,
-              transform: [{ scale: lineComboScale }],
+              opacity: boxCompleteOpacity,
+              transform: [{ scale: boxCompleteScale }],
             },
           ]}
         >
-          <Text style={styles.lineComboTitle}>Line Combo</Text>
-          <Text style={styles.lineComboSubtitle}>{lineComboDisplay.lineCount} Lines</Text>
-          <Text style={styles.lineComboPoints}>+{lineComboDisplay.bonusPoints}</Text>
+          <Text style={styles.boxCompleteTitle}>Box {boxCompleteDisplay.boxNumber}</Text>
         </Animated.View>
       )}
 
@@ -1615,7 +1886,7 @@ function FailedModal({ visible, onRestart }) {
   );
 }
 
-function WinModal({ visible, time, onReveal }) {
+function WinModal({ visible, time, isRaceMode, onReveal }) {
   return (
     <Modal
       visible={visible}
@@ -1625,11 +1896,13 @@ function WinModal({ visible, time, onReveal }) {
       <View style={styles.modalOverlay}>
         <View style={styles.modalCard}>
 
-          <Text style={styles.modalEmoji}>🎉</Text>
-          <Text style={styles.modalTitle}>Puzzle Solved!</Text>
-          <Text style={styles.modalTime}>Completed in {time}</Text>
+          <Text style={styles.modalEmoji}>{isRaceMode ? '🏁' : '🎉'}</Text>
+          <Text style={styles.modalTitle}>{isRaceMode ? 'You Won!' : 'Puzzle Solved!'}</Text>
+          <Text style={styles.modalTime}>{isRaceMode ? `Winning time ${time}` : `Completed in ${time}`}</Text>
           <Text style={styles.modalSubtitle}>
-            You've unlocked a hidden image reward.
+            {isRaceMode
+              ? 'First complete board takes the race.'
+              : "You've unlocked a hidden image reward."}
           </Text>
 
           <TouchableOpacity
@@ -1637,7 +1910,7 @@ function WinModal({ visible, time, onReveal }) {
             onPress={onReveal}
             activeOpacity={0.8}
           >
-            <Text style={styles.revealButtonText}>Reveal Reward →</Text>
+            <Text style={styles.revealButtonText}>{isRaceMode ? 'Race Again' : 'Reveal Reward →'}</Text>
           </TouchableOpacity>
 
         </View>
@@ -1652,6 +1925,8 @@ function SudokuGrid({
   puzzle,
   board,
   notes,
+  backgroundSource,
+  revealedBackgroundCells,
   selectedCell,
   isDarkMode,
   cellFeedback,
@@ -1665,12 +1940,23 @@ function SudokuGrid({
   const { width } = useWindowDimensions();
   const gridSize  = width - 32;
   const cellSize  = gridSize / 9;
+  const revealedCellSet = new Set(revealedBackgroundCells);
 
   const selectedValue =
     selectedCell !== null ? board[selectedCell.row][selectedCell.col] : 0;
+  const GridFrame = backgroundSource ? ImageBackground : View;
+  const gridFrameProps = backgroundSource
+    ? {
+        source: backgroundSource,
+        resizeMode: 'cover',
+        imageStyle: styles.gridBackgroundImage,
+      }
+    : {};
 
   return (
-    <View style={[
+    <GridFrame
+      {...gridFrameProps}
+      style={[
       styles.grid,
       isDarkMode && styles.gridDark,
       { width: gridSize, height: gridSize },
@@ -1716,6 +2002,7 @@ function SudokuGrid({
               cellFeedback?.row === rowIndex && cellFeedback?.col === colIndex
                 ? cellFeedback.type
                 : null;
+            const isBackgroundRevealed = revealedCellSet.has(`${rowIndex}-${colIndex}`);
             const lineFlashPosition = lineClearFeedback
               ? lineClearFeedback.lines.reduce((position, line) => {
                   if (line.type === 'row' && line.index === rowIndex) {
@@ -1741,6 +2028,7 @@ function SudokuGrid({
                 isPeer={isPeer}
                 isSameNumber={isSameNumber}
                 isMistake={isMistake}
+                isBackgroundRevealed={isBackgroundRevealed}
                 isDarkMode={isDarkMode}
                 feedbackType={feedbackType}
                 feedbackCombo={cellFeedbackCombo}
@@ -1754,7 +2042,57 @@ function SudokuGrid({
           })}
         </View>
       ))}
+    </GridFrame>
+  );
+}
+
+function RacePrivacyShield({ visible }) {
+  if (!visible) return null;
+
+  return (
+    <View pointerEvents="auto" style={styles.racePrivacyShield}>
+      <Text style={styles.racePrivacyTitle}>Race Shield Active</Text>
+      <Text style={styles.racePrivacyText}>Return to the game window to show the board.</Text>
     </View>
+  );
+}
+
+function BotResultModal({ visible, didPlayerWin, botName, time, onRestart, onChooseBot }) {
+  return (
+    <Modal
+      visible={visible}
+      transparent={true}
+      animationType="fade"
+    >
+      <View style={styles.modalOverlay}>
+        <View style={styles.modalCard}>
+          <Text style={styles.modalEmoji}>{didPlayerWin ? '🏆' : '🤖'}</Text>
+          <Text style={styles.modalTitle}>{didPlayerWin ? 'You Beat the Bot!' : `${botName} Won`}</Text>
+          <Text style={styles.modalTime}>Time {time}</Text>
+          <Text style={styles.modalSubtitle}>
+            {didPlayerWin
+              ? 'First full board wins. Nice turn-based solve.'
+              : 'The bot completed its board first. Run it back.'}
+          </Text>
+
+          <TouchableOpacity
+            style={styles.revealButton}
+            onPress={onRestart}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.revealButtonText}>Rematch</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.botChooseButton}
+            onPress={onChooseBot}
+            activeOpacity={0.75}
+          >
+            <Text style={styles.botChooseButtonText}>Choose Bot</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    </Modal>
   );
 }
 
@@ -1763,6 +2101,7 @@ function SudokuGrid({
 function SudokuCell({
   value, notes, cellSize, rowIndex, colIndex,
   isGiven, isSelected, isPeer, isSameNumber, isMistake, isDarkMode,
+  isBackgroundRevealed,
   feedbackType, feedbackCombo, lineFlashPosition,
   correctCellAnim, wrongCellAnim, lineClearAnim, onPress,
 }) {
@@ -1777,11 +2116,13 @@ function SudokuCell({
   else if (isMistake)    backgroundColor = isDarkMode ? '#4a1016' : '#fde8e8';
   else if (isSameNumber) backgroundColor = isDarkMode ? '#273566' : '#c8d0f5';
   else if (isPeer)       backgroundColor = isDarkMode ? '#1f2937' : '#eef0fb';
+  if (isBackgroundRevealed) backgroundColor = isSelected ? 'rgba(67,97,238,0.44)' : 'transparent';
 
   // Text colour: mistake = red, user entry = blue, given = dark, selected = white
   let textColor = isDarkMode ? '#f8f9fa' : '#1a1a2e';
   if (isMistake)              textColor = '#e63946';
   if (!isGiven && !isMistake) textColor = '#4361ee';
+  if (isBackgroundRevealed)   textColor = '#ffffff';
   if (isSelected)             textColor = '#ffffff';
   const comboScaleBoost = Math.min(0.45, Math.max(0, (feedbackCombo - 1) * 0.045));
   const correctScale = correctCellAnim.interpolate({
@@ -1834,6 +2175,7 @@ function SudokuCell({
       onPress={onPress}
       activeOpacity={0.7}
     >
+      {isBackgroundRevealed && <View pointerEvents="none" style={styles.revealedCellShade} />}
       {hasLineFlash && (
         <Animated.View
           style={[
@@ -1877,6 +2219,7 @@ function SudokuCell({
               color: textColor,
               fontWeight: isGiven ? '600' : '400',
             },
+            isBackgroundRevealed && styles.revealedCellText,
           ]}>
             {value}
           </Text>
@@ -1972,22 +2315,10 @@ function NumberPad({ isNoteMode, isNoteFeatureEnabled, isDarkMode, onNumberPress
 // ─── Styles ──────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  safeArea: { flex: 1, backgroundColor: '#f8f9fa' },
-  safeAreaDark: { backgroundColor: '#0f172a' },
-  screenBackground: { flex: 1 },
-  gameBackgroundImage: { opacity: 1 },
-  gameBackgroundTint: {
-    position: 'absolute',
-    top: 0,
-    right: 0,
-    bottom: 0,
-    left: 0,
-    backgroundColor: 'rgba(248,249,250,0.72)',
-  },
-  gameBackgroundTintDark: {
-    backgroundColor: 'rgba(15,23,42,0.78)',
-  },
-  container: { flex: 1, alignItems: 'center', paddingTop: 16 },
+  safeArea: { flex: 1, backgroundColor: '#000000' },
+  safeAreaDark: { backgroundColor: '#000000' },
+  screenBackground: { flex: 1, backgroundColor: '#000000' },
+  container: { flex: 1, alignItems: 'center', paddingTop: 10, zIndex: 2 },
   containerDark: {},
 
   // Loading
@@ -1995,29 +2326,62 @@ const styles = StyleSheet.create({
   loadingText: { fontSize: 16, color: '#6c757d' },
 
   // Header
+  topControlsBand: {
+    width: '100%',
+    backgroundColor: '#000000',
+  },
+  bottomControlsBand: {
+    width: '100%',
+    flex: 1,
+    backgroundColor: '#000000',
+  },
   header: {
     width: '100%',
-    paddingHorizontal: 16,
+    paddingHorizontal: 14,
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-end',
-    marginBottom: 16,
-    minHeight: 102,
-    paddingTop: 48,
+    marginBottom: 12,
+    minHeight: 92,
+    paddingTop: 42,
+  },
+  raceBanner: {
+    marginHorizontal: 14,
+    marginTop: 8,
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: '#061b16',
+    borderWidth: 1,
+    borderColor: '#06d6a0',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  raceBannerTitle: {
+    color: '#06d6a0',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+  raceBannerText: {
+    color: '#ffffff',
+    fontSize: 12,
+    fontWeight: '800',
   },
   headerInfo: {
     maxWidth: '38%',
     zIndex: 2,
   },
-  heading: { fontSize: 22, fontWeight: 'bold', color: '#1a1a2e' },
+  heading: { fontSize: 20, fontWeight: '900', color: '#ffffff' },
   headingDark: { color: '#f8f9fa' },
-  subtleTextDark: { color: '#adb5bd' },
+  subtleTextDark: { color: '#d1d5db' },
   difficulty: {
-    fontSize: 12, color: '#6c757d',
-    textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 2,
+    fontSize: 11, color: '#d1d5db',
+    textTransform: 'uppercase', letterSpacing: 1.2, marginTop: 2,
   },
   mistakeCounter: {
-    fontSize: 13,
+    fontSize: 12,
     color: '#e63946',
     fontWeight: '700',
     marginTop: 4,
@@ -2028,15 +2392,15 @@ const styles = StyleSheet.create({
     right: 0,
     top: 0,
     textAlign: 'center',
-    fontSize: 34,
-    color: '#2a9d8f',
+    fontSize: 36,
+    color: '#188f7f',
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     zIndex: 2,
   },
   settingsButton: {
@@ -2046,10 +2410,10 @@ const styles = StyleSheet.create({
     backgroundColor: '#ffffff',
     alignItems: 'center',
     justifyContent: 'center',
-    elevation: 2,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
   settingsButtonText: {
@@ -2058,17 +2422,17 @@ const styles = StyleSheet.create({
     lineHeight: 24,
   },
   headerIconButton: {
-    minWidth: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: '#ffffff',
+    minWidth: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: '#111827',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 10,
-    elevation: 2,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
   headerIconButtonText: {
@@ -2081,7 +2445,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0,
   },
   homeIconButtonText: {
-    fontSize: 26,
+    fontSize: 24,
     fontWeight: '800',
     color: '#4361ee',
     lineHeight: 28,
@@ -2089,19 +2453,19 @@ const styles = StyleSheet.create({
 
   // Timer
   timerBox: {
-    backgroundColor: '#ffffff',
+    backgroundColor: '#111827',
     paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    elevation: 2,
+    paddingHorizontal: 14,
+    borderRadius: 20,
+    elevation: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
   timerText: {
-    fontSize: 22,
-    fontWeight: '700',
+    fontSize: 19,
+    fontWeight: '800',
     color: '#4361ee',
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
@@ -2110,12 +2474,14 @@ const styles = StyleSheet.create({
   // Grid
   grid: {
     backgroundColor: '#ffffff',
-    elevation: 4,
+    elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    overflow: 'hidden',
   },
+  gridBackgroundImage: { opacity: 1 },
   gridDark: {
     backgroundColor: '#111827',
     shadowOpacity: 0,
@@ -2194,7 +2560,7 @@ const styles = StyleSheet.create({
   },
   lineClearTitle: {
     color: '#ffffff',
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '900',
     textAlign: 'center',
     textTransform: 'uppercase',
@@ -2206,38 +2572,23 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 2,
   },
-  lineComboBadge: {
+  boxCompleteBadge: {
     position: 'absolute',
     top: 154,
     backgroundColor: '#001d3d',
     borderRadius: 12,
     paddingHorizontal: 24,
-    paddingVertical: 14,
+    paddingVertical: 12,
     borderWidth: 4,
     borderColor: '#4cc9f0',
     zIndex: 13,
   },
-  lineComboTitle: {
+  boxCompleteTitle: {
     color: '#ffffff',
-    fontSize: 24,
+    fontSize: 26,
     fontWeight: '900',
     textAlign: 'center',
     textTransform: 'uppercase',
-  },
-  lineComboSubtitle: {
-    color: '#4cc9f0',
-    fontSize: 15,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginTop: 2,
-    textTransform: 'uppercase',
-  },
-  lineComboPoints: {
-    color: '#ffd166',
-    fontSize: 24,
-    fontWeight: '900',
-    textAlign: 'center',
-    marginTop: 2,
   },
   megaPartyBadge: {
     position: 'absolute',
@@ -2328,8 +2679,16 @@ const styles = StyleSheet.create({
   cell: {
     alignItems: 'center',
     justifyContent: 'center',
-    borderColor: '#1a1a2e',
+    borderColor: '#111827',
     overflow: 'visible',
+  },
+  revealedCellShade: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    backgroundColor: 'rgba(0,0,0,0.24)',
   },
   cellContent: {
     position: 'absolute',
@@ -2368,6 +2727,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#555555',
   },
   cellText: { textAlign: 'center' },
+  revealedCellText: {
+    fontWeight: '800',
+    textShadowColor: 'rgba(0,0,0,0.8)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
   notesGrid: {
     width: '100%',
     height: '100%',
@@ -2388,18 +2753,18 @@ const styles = StyleSheet.create({
   actionRow: {
     flexDirection: 'row',
     width: '100%',
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    paddingHorizontal: 14,
+    paddingTop: 14,
     justifyContent: 'space-between',
-    gap: 10,
+    gap: 8,
   },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ffffff',
-    paddingVertical: 10,
+    backgroundColor: '#111827',
+    paddingVertical: 11,
     paddingHorizontal: 10,
     borderRadius: 12,
     gap: 6,
@@ -2410,28 +2775,28 @@ const styles = StyleSheet.create({
     shadowRadius: 4,
   },
   actionButtonDisabled: {
-    backgroundColor: '#f1f3f5',
+    backgroundColor: '#1f2937',
     elevation: 0,
   },
   actionButtonActive: {
     backgroundColor: '#4361ee',
   },
-  actionButtonIcon: { fontSize: 18, color: '#4361ee' },
-  actionButtonLabel: { fontSize: 14, fontWeight: '600', color: '#4361ee' },
+  actionButtonIcon: { fontSize: 16, color: '#4361ee', fontWeight: '800' },
+  actionButtonLabel: { fontSize: 13, fontWeight: '800', color: '#4361ee' },
   actionButtonLabelDisabled: { color: '#adb5bd' },
   actionButtonActiveText: { color: '#ffffff' },
 
   // Number pad
   padContainer: {
     width: '100%',
-    paddingHorizontal: 16,
-    paddingTop: 12,
+    paddingHorizontal: 14,
+    paddingTop: 10,
     alignItems: 'center',
   },
   padModeText: {
     fontSize: 12,
     color: '#6c757d',
-    marginBottom: 8,
+    marginBottom: 7,
     textTransform: 'uppercase',
     letterSpacing: 1,
   },
@@ -2443,31 +2808,31 @@ const styles = StyleSheet.create({
   },
   padButton: {
     flex: 1,
-    marginHorizontal: 3,
-    paddingVertical: 14,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
+    marginHorizontal: 2,
+    paddingVertical: 13,
+    backgroundColor: '#111827',
+    borderRadius: 9,
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
-  padButtonText: { fontSize: 20, fontWeight: '600', color: '#1a1a2e' },
+  padButtonText: { fontSize: 20, fontWeight: '800', color: '#ffffff' },
   eraseButton: {
     paddingVertical: 14,
     paddingHorizontal: 40,
-    backgroundColor: '#ffffff',
-    borderRadius: 10,
+    backgroundColor: '#111827',
+    borderRadius: 9,
     alignItems: 'center',
     elevation: 2,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.08,
+    shadowOpacity: 0.05,
     shadowRadius: 4,
   },
-  eraseButtonText: { fontSize: 16, fontWeight: '600', color: '#e63946' },
+  eraseButtonText: { fontSize: 15, fontWeight: '800', color: '#e63946' },
 
   // Win modal
   modalOverlay: {
@@ -2487,6 +2852,32 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 12,
+  },
+  racePrivacyShield: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 100,
+    backgroundColor: '#020617',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  racePrivacyTitle: {
+    color: '#06d6a0',
+    fontSize: 30,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  racePrivacyText: {
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '700',
+    textAlign: 'center',
+    lineHeight: 23,
   },
   settingsCard: {
     backgroundColor: '#ffffff',
@@ -2575,7 +2966,7 @@ const styles = StyleSheet.create({
   adPreview: {
     width: '100%',
     height: 110,
-    borderRadius: 12,
+    borderRadius: 10,
     backgroundColor: '#eef0fb',
     alignItems: 'center',
     justifyContent: 'center',
@@ -2629,6 +3020,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   revealButtonText: { color: '#ffffff', fontSize: 17, fontWeight: 'bold' },
+  botChooseButton: {
+    paddingTop: 16,
+  },
+  botChooseButtonText: {
+    color: '#4361ee',
+    fontSize: 15,
+    fontWeight: '800',
+  },
   pauseScreen: {
     flex: 1,
     backgroundColor: '#1a1a2e',
@@ -2683,7 +3082,7 @@ const styles = StyleSheet.create({
     fontSize: 42,
     fontWeight: '900',
     color: '#ffffff',
-    marginBottom: 12,
+    marginBottom: 10,
     textTransform: 'uppercase',
   },
   failedSubtitle: {

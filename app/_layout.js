@@ -49,9 +49,11 @@ export default function RootLayout() {
         ),
       }}
     >
-      <Stack.Screen name="index" options={{ title: 'SudokuReveal' }} />
+      <Stack.Screen name="index" options={{ title: 'Sudoku Infinite' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
       <Stack.Screen name="select" options={{ title: 'Puzzles' }} />
+      <Stack.Screen name="bot" options={{ title: 'Bot Battle' }} />
+      <Stack.Screen name="online" options={{ title: 'Online Play' }} />
       <Stack.Screen name="gallery" options={{ title: 'Gallery' }} />
       <Stack.Screen name="puzzle" options={{ title: 'Puzzle' }} />
       <Stack.Screen name="completion" options={{ title: 'Complete' }} />

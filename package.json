@@ -4,6 +4,7 @@
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
+    "go": "expo start --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
@@ -12,7 +13,7 @@
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "2.2.0",
-    "expo": "~54.0.34",
+    "expo": "^55.0.23",
     "expo-image-picker": "~17.0.11",
     "expo-router": "~6.0.23",
     "expo-status-bar": "~3.0.8",

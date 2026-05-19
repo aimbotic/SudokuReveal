@@ -1,7 +1,14 @@
+import { useEffect } from 'react';
 import { Stack, router } from 'expo-router';
 import { Text, TouchableOpacity } from 'react-native';
 
+import { flushSyncQueue } from '../utils/offlineSync';
+
 export default function RootLayout() {
+  useEffect(() => {
+    flushSyncQueue();
+  }, []);
+
   return (
     <Stack
       screenOptions={{
@@ -51,9 +58,11 @@ export default function RootLayout() {
     >
       <Stack.Screen name="index" options={{ title: 'Sudoku Infinite' }} />
       <Stack.Screen name="settings" options={{ title: 'Settings' }} />
+      <Stack.Screen name="jukebox" options={{ title: 'Jukebox' }} />
       <Stack.Screen name="select" options={{ title: 'Puzzles' }} />
       <Stack.Screen name="bot" options={{ title: 'Bot Battle' }} />
       <Stack.Screen name="online" options={{ title: 'Online Play' }} />
+      <Stack.Screen name="ranked" options={{ title: 'Ranked' }} />
       <Stack.Screen name="gallery" options={{ title: 'Gallery' }} />
       <Stack.Screen name="puzzle" options={{ title: 'Puzzle' }} />
       <Stack.Screen name="completion" options={{ title: 'Complete' }} />

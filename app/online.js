@@ -1,10 +1,12 @@
 import { useMemo, useState } from 'react';
 import {
   SafeAreaView,
+  ScrollView,
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 
@@ -23,9 +25,13 @@ function createRoomCode(difficulty) {
 }
 
 export default function OnlineScreen() {
+  const { width, height } = useWindowDimensions();
   const [difficulty, setDifficulty] = useState('medium');
   const [roomCode, setRoomCode] = useState(() => createRoomCode('medium'));
   const selectedPuzzle = useMemo(() => getPuzzleForDifficulty(difficulty), [difficulty]);
+  const contentWidth = Math.min(width - 24, 500);
+  const isSmallPhone = width <= 390;
+  const isShortPhone = height <= 760;
 
   function handleDifficultyPress(nextDifficulty) {
     setDifficulty(nextDifficulty);
@@ -38,26 +44,38 @@ export default function OnlineScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView
+        style={styles.scroll}
+        contentContainerStyle={[
+          styles.container,
+          isShortPhone && styles.containerShort,
+          { width: contentWidth },
+        ]}
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <Text style={styles.kicker}>Race Room</Text>
-          <Text style={styles.title}>Online Play</Text>
+          <Text style={[styles.title, isSmallPhone && styles.titleSmall]}>Online Play</Text>
           <Text style={styles.subtitle}>First player to solve the board wins.</Text>
         </View>
 
         <View style={styles.roomCard}>
           <Text style={styles.roomLabel}>Room Code</Text>
-          <Text style={styles.roomCode}>{roomCode}</Text>
+          <Text style={[styles.roomCode, isSmallPhone && styles.roomCodeSmall]}>{roomCode}</Text>
           <Text style={styles.roomMeta}>{selectedPuzzle.title}</Text>
         </View>
 
-        <View style={styles.segmentRow}>
+        <View style={[styles.segmentRow, isSmallPhone && styles.segmentRowSmall]}>
           {DIFFICULTIES.map((level) => {
             const isActive = level === difficulty;
             return (
               <TouchableOpacity
                 key={level}
-                style={[styles.segmentButton, isActive && styles.segmentButtonActive]}
+                style={[
+                  styles.segmentButton,
+                  isSmallPhone && styles.segmentButtonSmall,
+                  isActive && styles.segmentButtonActive,
+                ]}
                 onPress={() => handleDifficultyPress(level)}
                 activeOpacity={0.75}
               >
@@ -91,7 +109,7 @@ export default function OnlineScreen() {
         >
           <Text style={styles.secondaryButtonText}>Back Home</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -101,11 +119,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#050816',
   },
-  container: {
+  scroll: {
     flex: 1,
-    paddingHorizontal: 22,
+  },
+  container: {
+    alignSelf: 'center',
     paddingTop: 42,
     paddingBottom: 30,
+  },
+  containerShort: {
+    paddingTop: 22,
   },
   header: {
     marginBottom: 24,
@@ -123,6 +146,9 @@ const styles = StyleSheet.create({
     fontSize: 38,
     fontWeight: '900',
     marginBottom: 8,
+  },
+  titleSmall: {
+    fontSize: 33,
   },
   subtitle: {
     color: '#c8d0f5',
@@ -151,6 +177,9 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     marginVertical: 8,
   },
+  roomCodeSmall: {
+    fontSize: 34,
+  },
   roomMeta: {
     color: '#06d6a0',
     fontSize: 15,
@@ -161,6 +190,9 @@ const styles = StyleSheet.create({
     gap: 8,
     marginBottom: 16,
   },
+  segmentRowSmall: {
+    flexWrap: 'wrap',
+  },
   segmentButton: {
     flex: 1,
     backgroundColor: '#111827',
@@ -169,6 +201,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#1f2937',
+  },
+  segmentButtonSmall: {
+    minWidth: '48%',
   },
   segmentButtonActive: {
     backgroundColor: '#06d6a0',

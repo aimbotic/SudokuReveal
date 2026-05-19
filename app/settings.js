@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
   useWindowDimensions,
@@ -20,20 +21,32 @@ import {
   loadSelectedBackground,
   selectBuiltInBackground,
 } from '../utils/background';
+import { getPendingSyncCount } from '../utils/offlineSync';
+import { loadPlayerProfile, savePlayerProfile } from '../utils/player';
+import { isSupabaseConfigured } from '../utils/supabase';
 
 export default function SettingsScreen() {
   const [backgroundSelection, setBackgroundSelection] = useState(null);
+  const [playerProfile, setPlayerProfile] = useState(null);
+  const [displayNameDraft, setDisplayNameDraft] = useState('');
+  const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const { width } = useWindowDimensions();
+  const contentWidth = Math.min(width - 24, 520);
+  const isSmallPhone = width <= 390;
   const tileGap = 12;
-  const tileWidth = (width - 48 - tileGap) / 2;
+  const tileWidth = (contentWidth - tileGap) / 2;
   const hasBackground = getBackgroundImageSource(backgroundSelection) !== undefined;
 
   useFocusEffect(
     useCallback(() => {
-      async function fetchBackground() {
+      async function fetchSettings() {
         setBackgroundSelection(await loadSelectedBackground());
+        const profile = await loadPlayerProfile();
+        setPlayerProfile(profile);
+        setDisplayNameDraft(profile.displayName);
+        setPendingSyncCount(await getPendingSyncCount());
       }
-      fetchBackground();
+      fetchSettings();
     }, [])
   );
 
@@ -53,15 +66,57 @@ export default function SettingsScreen() {
     setBackgroundSelection(null);
   }
 
+  async function handleSaveProfile() {
+    const profile = await savePlayerProfile({ displayName: displayNameDraft });
+    setPlayerProfile(profile);
+    setDisplayNameDraft(profile.displayName);
+    setPendingSyncCount(await getPendingSyncCount());
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <ScrollView
+        contentContainerStyle={[styles.content, { width: contentWidth }]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.sectionHeader}>
+          <Text style={styles.heading}>Player</Text>
+          <Text style={styles.subheading}>
+            This profile is saved on this device first and syncs to Supabase when available.
+          </Text>
+        </View>
+
+        <View style={styles.profileCard}>
+          <Text style={styles.inputLabel}>Display Name</Text>
+          <TextInput
+            style={styles.textInput}
+            value={displayNameDraft}
+            onChangeText={setDisplayNameDraft}
+            placeholder="Player"
+            maxLength={24}
+            autoCapitalize="words"
+          />
+          <Text style={styles.profileMeta} numberOfLines={1}>
+            Local ID: {playerProfile?.id ?? 'Loading...'}
+          </Text>
+          <Text style={styles.profileMeta}>
+            Sync: {isSupabaseConfigured() ? `${pendingSyncCount} pending` : 'offline-only until Supabase env is set'}
+          </Text>
+          <TouchableOpacity
+            style={styles.profileSaveButton}
+            onPress={handleSaveProfile}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.profileSaveButtonText}>Save Player</Text>
+          </TouchableOpacity>
+        </View>
+
         <View style={styles.sectionHeader}>
           <Text style={styles.heading}>Background</Text>
           <Text style={styles.subheading}>Choose a built-in image or use one from your device.</Text>
         </View>
 
-        <View style={styles.actionRow}>
+        <View style={[styles.actionRow, isSmallPhone && styles.actionRowSmall]}>
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={handleChooseCustom}
@@ -71,7 +126,11 @@ export default function SettingsScreen() {
           </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.secondaryButton, !hasBackground && styles.disabledButton]}
+            style={[
+              styles.secondaryButton,
+              isSmallPhone && styles.secondaryButtonSmall,
+              !hasBackground && styles.disabledButton,
+            ]}
             onPress={handleClearBackground}
             disabled={!hasBackground}
             activeOpacity={0.8}
@@ -119,12 +178,57 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   content: {
-    paddingHorizontal: 24,
+    alignSelf: 'center',
     paddingTop: 24,
     paddingBottom: 40,
   },
   sectionHeader: {
     marginBottom: 18,
+  },
+  profileCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#e7ebf3',
+    marginBottom: 24,
+  },
+  inputLabel: {
+    color: '#667085',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
+  textInput: {
+    minHeight: 48,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: '#dbe2ff',
+    paddingHorizontal: 12,
+    color: '#1a1a2e',
+    fontSize: 16,
+    fontWeight: '700',
+    backgroundColor: '#ffffff',
+    marginBottom: 10,
+  },
+  profileMeta: {
+    color: '#667085',
+    fontSize: 12,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  profileSaveButton: {
+    backgroundColor: '#111827',
+    borderRadius: 12,
+    paddingVertical: 13,
+    alignItems: 'center',
+    marginTop: 8,
+  },
+  profileSaveButtonText: {
+    color: '#ffffff',
+    fontSize: 15,
+    fontWeight: '900',
   },
   heading: {
     fontSize: 28,
@@ -141,6 +245,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     gap: 12,
     marginBottom: 22,
+  },
+  actionRowSmall: {
+    flexDirection: 'column',
   },
   primaryButton: {
     flex: 1,
@@ -162,6 +269,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 2,
     borderColor: '#dbe2ff',
+  },
+  secondaryButtonSmall: {
+    width: '100%',
   },
   secondaryButtonText: {
     color: '#4361ee',

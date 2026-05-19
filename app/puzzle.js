@@ -27,6 +27,8 @@ import {
   getBackgroundImageSource,
   loadSelectedBackground,
 } from '../utils/background';
+import { getBotById } from '../utils/bots';
+import { recordRankedLoss, recordRankedWin } from '../utils/ranked';
 
 const SETTINGS_KEY = 'puzzle_feature_settings';
 const MAX_MISTAKES = 3;
@@ -36,12 +38,6 @@ const MEGA_COMBO_TARGET = 10;
 const MEGA_COMBO_BONUS = 10000;
 const ULTIMATE_COMBO_TARGET = 15;
 const ULTIMATE_COMBO_BONUS = 50000;
-const BOT_PROFILES = {
-  easy: { name: 'Easy Bot', moveChance: 0.3, delay: 900 },
-  medium: { name: 'Medium Bot', moveChance: 0.55, delay: 720 },
-  hard: { name: 'Hard Bot', moveChance: 0.8, delay: 520 },
-  insane: { name: 'Insane Bot', moveChance: 1, delay: 300 },
-};
 const COMBO_BLOCKS = [
   { x: -92, y: -74, color: '#4cc9f0' },
   { x: -54, y: -118, color: '#4361ee' },
@@ -424,10 +420,10 @@ async function saveFeatureSettings(settings) {
 export default function PuzzleScreen() {
   const { id, mode, room, bot } = useLocalSearchParams();
   const puzzle = puzzlesData.find((p) => p.id === id);
-  const isOnlineRace = mode === 'race';
+  const isRankedMode = mode === 'ranked';
+  const isOnlineRace = mode === 'race' || isRankedMode;
   const isBotBattle = mode === 'bot';
-  const botDifficulty = BOT_PROFILES[bot] ? bot : 'easy';
-  const botProfile = BOT_PROFILES[botDifficulty];
+  const botProfile = getBotById(bot);
   const isProgressMode = !isOnlineRace && !isBotBattle;
   const roomCode = typeof room === 'string' ? room : 'QUICK';
 
@@ -454,6 +450,7 @@ export default function PuzzleScreen() {
   const [isRaceShielded, setIsRaceShielded] = useState(false);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [botResult, setBotResult]       = useState(null);
+  const [botTurnToken, setBotTurnToken] = useState(0);
   const [featureSettings, setFeatureSettings] = useState(DEFAULT_FEATURE_SETTINGS);
   const [backgroundSelection, setBackgroundSelection] = useState(null);
   const [isSolved, setIsSolved]         = useState(false);
@@ -485,6 +482,15 @@ export default function PuzzleScreen() {
     board && puzzle ? getCorrectFillCount(board, puzzle) : 0;
   const botFillCount                    =
     botBoard && puzzle ? getCorrectFillCount(botBoard, puzzle) : 0;
+  const { width, height } = useWindowDimensions();
+  const isCompactPhone                = width <= 430;
+  const isTightPhone                  = width <= 390;
+  const isShortPhone                  = height <= 820;
+  const singleGridSize                = Math.min(width - (isCompactPhone ? 24 : 32), 520);
+  const battleGridSize                = Math.max(
+    isTightPhone ? 154 : 164,
+    Math.min((width - (isCompactPhone ? 34 : 44)) / 2, isCompactPhone ? 190 : 260)
+  );
 
   useFocusEffect(
     useCallback(() => {
@@ -541,6 +547,7 @@ export default function PuzzleScreen() {
     setIsFailed(false);
     setBotResult(null);
     setIsBotThinking(false);
+    setBotTurnToken(0);
     clearTimeout(botMoveTimerRef.current);
     setComboCount(0);
     setComboDisplay(null);
@@ -615,40 +622,57 @@ export default function PuzzleScreen() {
     setSelectedCell({ row, col });
   }
 
-  function takeBotTurn(currentBotBoard = botBoard) {
-    if (!isBotBattle || !currentBotBoard || isSolved || isFailed || botResult !== null) return;
+  function advanceBotBoard() {
+    setBotBoard((latestBotBoard) => {
+      if (!latestBotBoard) {
+        return latestBotBoard;
+      }
+
+      if (Math.random() > botProfile.moveChance) {
+        return latestBotBoard;
+      }
+
+      const openCells = getOpenSolutionCells(latestBotBoard, puzzle);
+      if (openCells.length === 0) {
+        setBotResult('bot');
+        setIsFailed(true);
+        return latestBotBoard;
+      }
+
+      const cell = openCells[Math.floor(Math.random() * openCells.length)];
+      const nextBotBoard = copyGrid(latestBotBoard);
+      nextBotBoard[cell.row][cell.col] = puzzle.solution[cell.row][cell.col];
+
+      if (isBoardSolved(nextBotBoard, puzzle.solution)) {
+        setBotResult('bot');
+        setIsFailed(true);
+      }
+
+      return nextBotBoard;
+    });
+  }
+
+  useEffect(() => {
+    if (!isBotBattle || !isLoaded || isSolved || isFailed || botResult !== null) {
+      setIsBotThinking(false);
+      clearTimeout(botMoveTimerRef.current);
+      return;
+    }
 
     setIsBotThinking(true);
     clearTimeout(botMoveTimerRef.current);
     botMoveTimerRef.current = setTimeout(() => {
-      setBotBoard((latestBotBoard) => {
-        if (!latestBotBoard || Math.random() > botProfile.moveChance) {
-          setIsBotThinking(false);
-          return latestBotBoard;
-        }
-
-        const openCells = getOpenSolutionCells(latestBotBoard, puzzle);
-        if (openCells.length === 0) {
-          setIsBotThinking(false);
-          setBotResult('bot');
-          setIsFailed(true);
-          return latestBotBoard;
-        }
-
-        const cell = openCells[Math.floor(Math.random() * openCells.length)];
-        const nextBotBoard = copyGrid(latestBotBoard);
-        nextBotBoard[cell.row][cell.col] = puzzle.solution[cell.row][cell.col];
-
-        if (isBoardSolved(nextBotBoard, puzzle.solution)) {
-          setBotResult('bot');
-          setIsFailed(true);
-        }
-
-        setIsBotThinking(false);
-        return nextBotBoard;
-      });
+      advanceBotBoard();
+      setBotTurnToken((current) => current + 1);
     }, botProfile.delay);
-  }
+
+    return () => clearTimeout(botMoveTimerRef.current);
+  }, [isBotBattle, isLoaded, isSolved, isFailed, botResult, botProfile.delay, botTurnToken]);
+
+  useEffect(() => {
+    if (!isBotBattle) return;
+    setIsBotThinking(false);
+  }, [botBoard, isBotBattle]);
 
   function triggerComboEffect(nextComboCount, pointsEarned, megaBonus, soundComboCount = nextComboCount) {
     setComboDisplay({ count: soundComboCount, pointsEarned, megaBonus });
@@ -828,6 +852,7 @@ export default function PuzzleScreen() {
     setIsFailed(false);
     setBotResult(null);
     setIsBotThinking(false);
+    setBotTurnToken(0);
     clearTimeout(botMoveTimerRef.current);
     setComboCount(0);
     setComboDisplay(null);
@@ -906,8 +931,11 @@ export default function PuzzleScreen() {
 
     if (isBoardSolved(newBoard, puzzle.solution)) {
       if (isProgressMode) {
-        await markPuzzleCompleted(puzzle.id);
+        await markPuzzleCompleted(puzzle.id, { seconds, score });
         await clearBoardState(puzzle.id);
+      }
+      if (isRankedMode) {
+        await recordRankedWin();
       }
       if (isBotBattle) {
         setBotResult('player');
@@ -1090,6 +1118,9 @@ export default function PuzzleScreen() {
       if (isProgressMode) {
         await clearBoardState(puzzle.id);
       }
+      if (isRankedMode) {
+        await recordRankedLoss();
+      }
       setIsFailed(true);
       return;
     }
@@ -1112,15 +1143,16 @@ export default function PuzzleScreen() {
 
     if (isBoardSolved(newBoard, puzzle.solution)) {
       if (isProgressMode) {
-        await markPuzzleCompleted(puzzle.id);
+        await markPuzzleCompleted(puzzle.id, { seconds, score });
         await clearBoardState(puzzle.id);
+      }
+      if (isRankedMode) {
+        await recordRankedWin();
       }
       if (isBotBattle) {
         setBotResult('player');
       }
       setIsSolved(true);
-    } else if (isBotBattle && isAnswerEntry && number !== 0) {
-      takeBotTurn(botBoard);
     }
   }
 
@@ -1181,22 +1213,46 @@ export default function PuzzleScreen() {
         {/* Header — title on the left, timer on the right */}
         <View style={styles.topControlsBand}>
         {isOnlineRace && (
-          <View style={styles.raceBanner}>
-            <Text style={styles.raceBannerTitle}>Race Room {roomCode}</Text>
-            <Text style={styles.raceBannerText}>First full board wins</Text>
+          <View style={[styles.raceBanner, isCompactPhone && styles.raceBannerCompact]}>
+            <Text style={[styles.raceBannerTitle, isCompactPhone && styles.raceBannerTitleCompact]}>
+              {isRankedMode ? 'Ranked Match' : `Race Room ${roomCode}`}
+            </Text>
+            <Text style={styles.raceBannerText}>
+              {isRankedMode ? '+75 RP for a win' : 'First full board wins'}
+            </Text>
           </View>
         )}
         {isBotBattle && (
-          <View style={styles.raceBanner}>
-            <Text style={styles.raceBannerTitle}>{botProfile.name}</Text>
+          <View style={[styles.raceBanner, isCompactPhone && styles.raceBannerCompact]}>
+            <Text
+              style={[styles.raceBannerTitle, isCompactPhone && styles.raceBannerTitleCompact]}
+              numberOfLines={1}
+            >
+              {botProfile.name}
+            </Text>
             <Text style={styles.raceBannerText}>
               You {playerFillCount}/81  Bot {botFillCount}/81
             </Text>
           </View>
         )}
-        <View style={styles.header}>
-          <View style={styles.headerInfo}>
-            <Text style={[styles.heading, isDarkMode && styles.headingDark]}>{puzzle.title}</Text>
+        <View
+          style={[
+            styles.header,
+            isCompactPhone && styles.headerCompact,
+            isShortPhone && styles.headerShort,
+          ]}
+        >
+          <View style={[styles.headerInfo, isCompactPhone && styles.headerInfoCompact]}>
+            <Text
+              style={[
+                styles.heading,
+                isDarkMode && styles.headingDark,
+                isCompactPhone && styles.headingCompact,
+              ]}
+              numberOfLines={1}
+            >
+              {puzzle.title}
+            </Text>
             <Text style={[styles.difficulty, isDarkMode && styles.subtleTextDark]}>{puzzle.difficulty}</Text>
             {isBotBattle ? (
               <Text style={styles.mistakeCounter}>
@@ -1208,10 +1264,14 @@ export default function PuzzleScreen() {
               </Text>
             )}
           </View>
-          <Text style={styles.scoreText}>{score}</Text>
-          <View style={styles.headerActions}>
+          <Text style={[styles.scoreText, isCompactPhone && styles.scoreTextCompact]}>{score}</Text>
+          <View style={[styles.headerActions, isCompactPhone && styles.headerActionsCompact]}>
             <TouchableOpacity
-              style={[styles.headerIconButton, isDarkMode && styles.controlDark]}
+              style={[
+                styles.headerIconButton,
+                isDarkMode && styles.controlDark,
+                isCompactPhone && styles.headerIconButtonCompact,
+              ]}
               onPress={() => router.replace('/')}
               activeOpacity={0.7}
               accessibilityRole="button"
@@ -1219,12 +1279,24 @@ export default function PuzzleScreen() {
             >
               <Text style={styles.homeIconButtonText}>⌂</Text>
             </TouchableOpacity>
-            <View style={[styles.timerBox, isDarkMode && styles.controlDark]}>
-              <Text style={styles.timerText}>{formatTime(seconds)}</Text>
+            <View
+              style={[
+                styles.timerBox,
+                isDarkMode && styles.controlDark,
+                isCompactPhone && styles.timerBoxCompact,
+              ]}
+            >
+              <Text style={[styles.timerText, isCompactPhone && styles.timerTextCompact]}>
+                {formatTime(seconds)}
+              </Text>
             </View>
             {featureSettings.pause && (
               <TouchableOpacity
-                style={[styles.headerIconButton, isDarkMode && styles.controlDark]}
+                style={[
+                  styles.headerIconButton,
+                  isDarkMode && styles.controlDark,
+                  isCompactPhone && styles.headerIconButtonCompact,
+                ]}
                 onPress={() => setIsPaused(true)}
                 activeOpacity={0.7}
                 accessibilityRole="button"
@@ -1234,7 +1306,11 @@ export default function PuzzleScreen() {
               </TouchableOpacity>
             )}
             <TouchableOpacity
-              style={[styles.headerIconButton, isDarkMode && styles.controlDark]}
+              style={[
+                styles.headerIconButton,
+                isDarkMode && styles.controlDark,
+                isCompactPhone && styles.headerIconButtonCompact,
+              ]}
               onPress={() => setIsSettingsOpen(true)}
               activeOpacity={0.7}
               accessibilityRole="button"
@@ -1246,23 +1322,77 @@ export default function PuzzleScreen() {
         </View>
         </View>
 
-        {/* 9×9 grid */}
-        <SudokuGrid
-          puzzle={puzzle}
-          board={board}
-          notes={notes}
-          backgroundSource={backgroundSource}
-          revealedBackgroundCells={revealedBackgroundCells}
-          selectedCell={selectedCell}
-          isDarkMode={isDarkMode}
-          cellFeedback={cellFeedback}
-          cellFeedbackCombo={cellFeedbackCombo}
-          lineClearFeedback={lineClearFeedback}
-          correctCellAnim={correctCellAnim}
-          wrongCellAnim={wrongCellAnim}
-          lineClearAnim={lineClearAnim}
-          onCellPress={handleCellPress}
-        />
+        {isBotBattle ? (
+          <View style={[styles.battleBoardsWrap, isCompactPhone && styles.battleBoardsWrapCompact]}>
+            <View style={[styles.battleBoardCard, isCompactPhone && styles.battleBoardCardCompact]}>
+              <Text style={[styles.battleBoardLabel, isCompactPhone && styles.battleBoardLabelCompact]}>
+                You
+              </Text>
+              <SudokuGrid
+                puzzle={puzzle}
+                board={board}
+                notes={notes}
+                boardSize={battleGridSize}
+                backgroundSource={backgroundSource}
+                revealedBackgroundCells={revealedBackgroundCells}
+                selectedCell={selectedCell}
+                isDarkMode={isDarkMode}
+                cellFeedback={cellFeedback}
+                cellFeedbackCombo={cellFeedbackCombo}
+                lineClearFeedback={lineClearFeedback}
+                correctCellAnim={correctCellAnim}
+                wrongCellAnim={wrongCellAnim}
+                lineClearAnim={lineClearAnim}
+                onCellPress={handleCellPress}
+              />
+            </View>
+
+            <View style={[styles.battleBoardCard, isCompactPhone && styles.battleBoardCardCompact]}>
+              <Text
+                style={[styles.battleBoardLabel, isCompactPhone && styles.battleBoardLabelCompact]}
+                numberOfLines={1}
+              >
+                {botProfile.name}
+              </Text>
+              <SudokuGrid
+                puzzle={puzzle}
+                board={botBoard}
+                notes={createEmptyNotes()}
+                boardSize={battleGridSize}
+                backgroundSource={null}
+                revealedBackgroundCells={[]}
+                selectedCell={null}
+                isDarkMode={isDarkMode}
+                cellFeedback={null}
+                cellFeedbackCombo={1}
+                lineClearFeedback={null}
+                correctCellAnim={correctCellAnim}
+                wrongCellAnim={wrongCellAnim}
+                lineClearAnim={lineClearAnim}
+                onCellPress={() => {}}
+                isInteractive={false}
+              />
+            </View>
+          </View>
+        ) : (
+          <SudokuGrid
+            puzzle={puzzle}
+            board={board}
+            notes={notes}
+            boardSize={singleGridSize}
+            backgroundSource={backgroundSource}
+            revealedBackgroundCells={revealedBackgroundCells}
+            selectedCell={selectedCell}
+            isDarkMode={isDarkMode}
+            cellFeedback={cellFeedback}
+            cellFeedbackCombo={cellFeedbackCombo}
+            lineClearFeedback={lineClearFeedback}
+            correctCellAnim={correctCellAnim}
+            wrongCellAnim={wrongCellAnim}
+            lineClearAnim={lineClearAnim}
+            onCellPress={handleCellPress}
+          />
+        )}
 
         <ComboEffects
           comboCount={comboDisplay}
@@ -1281,11 +1411,12 @@ export default function PuzzleScreen() {
 
         <View style={styles.bottomControlsBand}>
           {/* Undo button */}
-          <View style={styles.actionRow}>
+          <View style={[styles.actionRow, isCompactPhone && styles.actionRowCompact]}>
             <TouchableOpacity
               style={[
                     styles.actionButton,
                     isDarkMode && styles.controlDark,
+                    isCompactPhone && styles.actionButtonCompact,
                     (!featureSettings.undo || undoStack.length === 0) && styles.actionButtonDisabled,
               ]}
               onPress={handleUndo}
@@ -1304,6 +1435,7 @@ export default function PuzzleScreen() {
               style={[
                 styles.actionButton,
                 isDarkMode && styles.controlDark,
+                isCompactPhone && styles.actionButtonCompact,
                 (!featureSettings.hints || !getHintCell()) && styles.actionButtonDisabled,
               ]}
               onPress={handleHintPress}
@@ -1327,6 +1459,7 @@ export default function PuzzleScreen() {
               style={[
                     styles.actionButton,
                     isDarkMode && styles.controlDark,
+                    isCompactPhone && styles.actionButtonCompact,
                     featureSettings.notes && isNoteMode && styles.actionButtonActive,
                 !featureSettings.notes && styles.actionButtonDisabled,
               ]}
@@ -1360,6 +1493,7 @@ export default function PuzzleScreen() {
             isNoteMode={isNoteMode}
             isNoteFeatureEnabled={featureSettings.notes}
             isDarkMode={isDarkMode}
+            isCompactPhone={isCompactPhone}
             onNumberPress={handleNumberPress}
           />
         </View>
@@ -1373,8 +1507,11 @@ export default function PuzzleScreen() {
         visible={isSolved && !isBotBattle}
         time={formatTime(seconds)}
         isRaceMode={isOnlineRace}
+        isRankedMode={isRankedMode}
         onReveal={() => {
-          if (isOnlineRace) {
+          if (isRankedMode) {
+            router.replace('/ranked');
+          } else if (isOnlineRace) {
             router.replace('/online');
           } else {
             router.replace(`/completion?id=${puzzle.id}`);
@@ -1886,7 +2023,7 @@ function FailedModal({ visible, onRestart }) {
   );
 }
 
-function WinModal({ visible, time, isRaceMode, onReveal }) {
+function WinModal({ visible, time, isRaceMode, isRankedMode, onReveal }) {
   return (
     <Modal
       visible={visible}
@@ -1910,7 +2047,9 @@ function WinModal({ visible, time, isRaceMode, onReveal }) {
             onPress={onReveal}
             activeOpacity={0.8}
           >
-            <Text style={styles.revealButtonText}>{isRaceMode ? 'Race Again' : 'Reveal Reward →'}</Text>
+            <Text style={styles.revealButtonText}>
+              {isRankedMode ? 'View Rank' : isRaceMode ? 'Race Again' : 'Reveal Reward'}
+            </Text>
           </TouchableOpacity>
 
         </View>
@@ -1925,6 +2064,7 @@ function SudokuGrid({
   puzzle,
   board,
   notes,
+  boardSize,
   backgroundSource,
   revealedBackgroundCells,
   selectedCell,
@@ -1936,9 +2076,10 @@ function SudokuGrid({
   wrongCellAnim,
   lineClearAnim,
   onCellPress,
+  isInteractive = true,
 }) {
   const { width } = useWindowDimensions();
-  const gridSize  = width - 32;
+  const gridSize  = boardSize ?? width - 32;
   const cellSize  = gridSize / 9;
   const revealedCellSet = new Set(revealedBackgroundCells);
 
@@ -2037,6 +2178,7 @@ function SudokuGrid({
                 wrongCellAnim={wrongCellAnim}
                 lineClearAnim={lineClearAnim}
                 onPress={() => onCellPress(rowIndex, colIndex)}
+                isInteractive={isInteractive}
               />
             );
           })}
@@ -2103,7 +2245,7 @@ function SudokuCell({
   isGiven, isSelected, isPeer, isSameNumber, isMistake, isDarkMode,
   isBackgroundRevealed,
   feedbackType, feedbackCombo, lineFlashPosition,
-  correctCellAnim, wrongCellAnim, lineClearAnim, onPress,
+  correctCellAnim, wrongCellAnim, lineClearAnim, onPress, isInteractive,
 }) {
   const borderRight  = colIndex === 8 ? 2 : colIndex % 3 === 2 ? 2 : 0.5;
   const borderBottom = rowIndex === 8 ? 2 : rowIndex % 3 === 2 ? 2 : 0.5;
@@ -2173,7 +2315,8 @@ function SudokuCell({
         },
       ]}
       onPress={onPress}
-      activeOpacity={0.7}
+      activeOpacity={isInteractive ? 0.7 : 1}
+      disabled={!isInteractive}
     >
       {isBackgroundRevealed && <View pointerEvents="none" style={styles.revealedCellShade} />}
       {hasLineFlash && (
@@ -2279,30 +2422,46 @@ function SudokuCell({
 
 // ─── Number Pad ──────────────────────────────────────────────────
 
-function NumberPad({ isNoteMode, isNoteFeatureEnabled, isDarkMode, onNumberPress }) {
+function NumberPad({ isNoteMode, isNoteFeatureEnabled, isDarkMode, isCompactPhone, onNumberPress }) {
   return (
-    <View style={styles.padContainer}>
+    <View style={[styles.padContainer, isCompactPhone && styles.padContainerCompact]}>
       {isNoteFeatureEnabled && (
         <Text style={[styles.padModeText, isDarkMode && styles.subtleTextDark]}>
           {isNoteMode ? 'Adding notes' : 'Entering answers'}
         </Text>
       )}
 
-      <View style={styles.padRow}>
+      <View style={[styles.padRow, isCompactPhone && styles.padRowCompact]}>
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <TouchableOpacity
             key={n}
-            style={[styles.padButton, isDarkMode && styles.controlDark]}
+            style={[
+              styles.padButton,
+              isDarkMode && styles.controlDark,
+              isCompactPhone && styles.padButtonCompact,
+            ]}
             onPress={() => onNumberPress(n)}
             activeOpacity={0.7}
           >
-            <Text style={[styles.padButtonText, isDarkMode && styles.headingDark]}>{n}</Text>
+            <Text
+              style={[
+                styles.padButtonText,
+                isDarkMode && styles.headingDark,
+                isCompactPhone && styles.padButtonTextCompact,
+              ]}
+            >
+              {n}
+            </Text>
           </TouchableOpacity>
         ))}
       </View>
 
       <TouchableOpacity
-        style={[styles.eraseButton, isDarkMode && styles.controlDark]}
+        style={[
+          styles.eraseButton,
+          isDarkMode && styles.controlDark,
+          isCompactPhone && styles.eraseButtonCompact,
+        ]}
         onPress={() => onNumberPress(0)}
         activeOpacity={0.7}
       >
@@ -2345,6 +2504,15 @@ const styles = StyleSheet.create({
     minHeight: 92,
     paddingTop: 42,
   },
+  headerCompact: {
+    paddingHorizontal: 12,
+    marginBottom: 10,
+    minHeight: 80,
+    paddingTop: 30,
+  },
+  headerShort: {
+    paddingTop: 24,
+  },
   raceBanner: {
     marginHorizontal: 14,
     marginTop: 8,
@@ -2358,11 +2526,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
   },
+  raceBannerCompact: {
+    marginHorizontal: 12,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+  },
   raceBannerTitle: {
     color: '#06d6a0',
     fontSize: 13,
     fontWeight: '900',
     textTransform: 'uppercase',
+  },
+  raceBannerTitleCompact: {
+    fontSize: 12,
   },
   raceBannerText: {
     color: '#ffffff',
@@ -2373,7 +2549,11 @@ const styles = StyleSheet.create({
     maxWidth: '38%',
     zIndex: 2,
   },
+  headerInfoCompact: {
+    maxWidth: '34%',
+  },
   heading: { fontSize: 20, fontWeight: '900', color: '#ffffff' },
+  headingCompact: { fontSize: 17 },
   headingDark: { color: '#f8f9fa' },
   subtleTextDark: { color: '#d1d5db' },
   difficulty: {
@@ -2397,11 +2577,17 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontVariant: ['tabular-nums'],
   },
+  scoreTextCompact: {
+    fontSize: 30,
+  },
   headerActions: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
     zIndex: 2,
+  },
+  headerActionsCompact: {
+    gap: 6,
   },
   settingsButton: {
     width: 44,
@@ -2435,6 +2621,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
   },
+  headerIconButtonCompact: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    paddingHorizontal: 8,
+  },
   headerIconButtonText: {
     fontSize: 13,
     fontWeight: '700',
@@ -2463,6 +2655,11 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
   },
+  timerBoxCompact: {
+    paddingVertical: 7,
+    paddingHorizontal: 10,
+    borderRadius: 18,
+  },
   timerText: {
     fontSize: 19,
     fontWeight: '800',
@@ -2470,8 +2667,43 @@ const styles = StyleSheet.create({
     fontVariant: ['tabular-nums'],
     letterSpacing: 1,
   },
+  timerTextCompact: {
+    fontSize: 17,
+  },
 
   // Grid
+  battleBoardsWrap: {
+    width: '100%',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    paddingHorizontal: 8,
+  },
+  battleBoardsWrapCompact: {
+    gap: 8,
+    paddingHorizontal: 4,
+  },
+  battleBoardCard: {
+    flex: 1,
+    alignItems: 'center',
+  },
+  battleBoardCardCompact: {
+    flex: 0,
+  },
+  battleBoardLabel: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  battleBoardLabelCompact: {
+    fontSize: 12,
+    marginBottom: 6,
+    maxWidth: 150,
+  },
   grid: {
     backgroundColor: '#ffffff',
     elevation: 2,
@@ -2758,6 +2990,11 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: 8,
   },
+  actionRowCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    gap: 6,
+  },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
@@ -2773,6 +3010,12 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
+  },
+  actionButtonCompact: {
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    gap: 4,
   },
   actionButtonDisabled: {
     backgroundColor: '#1f2937',
@@ -2793,6 +3036,10 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     alignItems: 'center',
   },
+  padContainerCompact: {
+    paddingHorizontal: 12,
+    paddingTop: 8,
+  },
   padModeText: {
     fontSize: 12,
     color: '#6c757d',
@@ -2805,6 +3052,9 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     marginBottom: 12,
+  },
+  padRowCompact: {
+    marginBottom: 10,
   },
   padButton: {
     flex: 1,
@@ -2819,7 +3069,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 4,
   },
+  padButtonCompact: {
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
   padButtonText: { fontSize: 20, fontWeight: '800', color: '#ffffff' },
+  padButtonTextCompact: { fontSize: 18 },
   eraseButton: {
     paddingVertical: 14,
     paddingHorizontal: 40,
@@ -2831,6 +3086,10 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
+  },
+  eraseButtonCompact: {
+    paddingVertical: 12,
+    paddingHorizontal: 30,
   },
   eraseButtonText: { fontSize: 15, fontWeight: '800', color: '#e63946' },
 

@@ -6,63 +6,75 @@ import {
   TouchableOpacity,
   SectionList,
   SafeAreaView,
+  useWindowDimensions,
 } from 'react-native';
 import { router, useFocusEffect } from 'expo-router';
 
 import puzzlesData from '../assets/puzzles.json';
 import { loadCompletedPuzzles } from '../utils/progress';
+import {
+  getLevelNumber,
+  getNextPlayablePuzzle,
+  isPuzzleUnlocked,
+  ORDERED_PUZZLES,
+} from '../utils/progression';
 
-// Colour for each difficulty label
 const DIFFICULTY_COLORS = {
-  easy:   '#2a9d8f',
+  easy: '#2a9d8f',
   medium: '#e9c46a',
-  hard:   '#e76f51',
+  hard: '#e76f51',
   insane: '#9b2226',
 };
+
 const DIFFICULTY_ORDER = ['easy', 'medium', 'hard', 'insane'];
 const PUZZLE_SECTIONS = DIFFICULTY_ORDER.map((difficulty) => ({
   title: difficulty.charAt(0).toUpperCase() + difficulty.slice(1),
   difficulty,
-  data: puzzlesData
-    .filter((puzzle) => puzzle.difficulty === difficulty)
-    .sort((a, b) => {
-      const aNumber = Number(a.id.replace(/\D/g, ''));
-      const bNumber = Number(b.id.replace(/\D/g, ''));
-      return aNumber - bNumber;
-    }),
+  data: ORDERED_PUZZLES.filter((puzzle) => puzzle.difficulty === difficulty),
 })).filter((section) => section.data.length > 0);
 
 export default function SelectScreen() {
+  const { width } = useWindowDimensions();
   const [completedIds, setCompletedIds] = useState([]);
+  const contentWidth = Math.min(width - 24, 520);
 
-  // Reload completed list every time this screen is focused
   useFocusEffect(
     useCallback(() => {
       async function fetch() {
-        const ids = await loadCompletedPuzzles();
-        setCompletedIds(ids);
+        setCompletedIds(await loadCompletedPuzzles());
       }
       fetch();
     }, [])
   );
 
+  const nextPuzzle = getNextPlayablePuzzle(completedIds);
+
   function handleSelectPuzzle(puzzle) {
-    // Pass the puzzle ID in the URL so puzzle.js knows which to load.
-    // This is like telling the next screen: "show puzzle_002".
+    if (!isPuzzleUnlocked(puzzle.id, completedIds)) return;
     router.push(`/puzzle?id=${puzzle.id}`);
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-
-      <View style={styles.header}>
-        <Text style={styles.heading}>Puzzles</Text>
+      <View style={[styles.header, { width: contentWidth }]}>
+        <Text style={styles.heading}>Level Path</Text>
         <Text style={styles.subheading}>
           {completedIds.length}/{puzzlesData.length} completed
         </Text>
+        <Text style={styles.progressHint}>
+          Clear one level to unlock the next.
+        </Text>
+        {nextPuzzle && (
+          <View style={styles.nextLevelPill}>
+            <Text style={styles.nextLevelPillText}>
+              Current level: {getLevelNumber(nextPuzzle.id)}
+            </Text>
+          </View>
+        )}
       </View>
 
       <SectionList
+        style={[styles.sectionList, { width: contentWidth }]}
         sections={PUZZLE_SECTIONS}
         keyExtractor={(item) => item.id}
         contentContainerStyle={styles.list}
@@ -81,30 +93,45 @@ export default function SelectScreen() {
         )}
         renderItem={({ item }) => {
           const isCompleted = completedIds.includes(item.id);
-          const puzzleNumber = Number(item.id.replace(/\D/g, ''));
+          const isUnlocked = isPuzzleUnlocked(item.id, completedIds);
+          const isCurrent = nextPuzzle?.id === item.id;
+          const levelNumber = getLevelNumber(item.id);
 
           return (
             <TouchableOpacity
-              style={[styles.card, isCompleted && styles.cardCompleted]}
+              style={[
+                styles.card,
+                isCompleted && styles.cardCompleted,
+                isCurrent && styles.cardCurrent,
+                !isUnlocked && styles.cardLocked,
+              ]}
               onPress={() => handleSelectPuzzle(item)}
-              activeOpacity={0.75}
+              activeOpacity={isUnlocked ? 0.75 : 1}
+              disabled={!isUnlocked}
             >
-              {/* Left: number circle */}
-              <View style={[
-                styles.numberCircle,
-                isCompleted && styles.numberCircleCompleted,
-              ]}>
-                <Text style={[
-                  styles.numberText,
-                  isCompleted && styles.numberTextCompleted,
-                ]}>
-                  {isCompleted ? '✓' : puzzleNumber}
+              <View
+                style={[
+                  styles.numberCircle,
+                  isCompleted && styles.numberCircleCompleted,
+                  isCurrent && styles.numberCircleCurrent,
+                  !isUnlocked && styles.numberCircleLocked,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.numberText,
+                    isCompleted && styles.numberTextCompleted,
+                    isCurrent && styles.numberTextCompleted,
+                    !isUnlocked && styles.numberTextLocked,
+                  ]}
+                >
+                  {isCompleted ? 'OK' : isUnlocked ? levelNumber : 'LOCK'}
                 </Text>
               </View>
 
-              {/* Middle: title + difficulty */}
               <View style={styles.cardInfo}>
                 <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={styles.levelMeta}>Level {levelNumber}</Text>
                 <View style={styles.difficultyBadge}>
                   <View
                     style={[
@@ -115,12 +142,14 @@ export default function SelectScreen() {
                   <Text style={styles.difficultyText}>
                     {item.difficulty.charAt(0).toUpperCase() + item.difficulty.slice(1)}
                   </Text>
+                  <Text style={styles.statusText}>
+                    {isCompleted ? 'Cleared' : isCurrent ? 'Ready' : isUnlocked ? 'Open' : 'Locked'}
+                  </Text>
                 </View>
               </View>
 
-              {/* Right: status */}
-              <Text style={styles.cardArrow}>
-                {isCompleted ? '🖼️' : '›'}
+              <Text style={[styles.cardArrow, !isUnlocked && styles.cardArrowLocked]}>
+                {isCompleted ? 'Done' : isUnlocked ? 'Play' : 'Locked'}
               </Text>
             </TouchableOpacity>
           );
@@ -136,7 +165,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f4f6fb',
   },
   header: {
-    paddingHorizontal: 22,
+    alignSelf: 'center',
     paddingTop: 22,
     paddingBottom: 12,
   },
@@ -151,10 +180,30 @@ const styles = StyleSheet.create({
     color: '#667085',
     fontWeight: '600',
   },
+  progressHint: {
+    marginTop: 8,
+    fontSize: 13,
+    color: '#667085',
+  },
+  nextLevelPill: {
+    alignSelf: 'flex-start',
+    marginTop: 12,
+    backgroundColor: '#eef4ff',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  nextLevelPillText: {
+    color: '#4361ee',
+    fontSize: 12,
+    fontWeight: '800',
+  },
   list: {
-    paddingHorizontal: 14,
     paddingBottom: 28,
     gap: 8,
+  },
+  sectionList: {
+    alignSelf: 'center',
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -185,8 +234,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: 9,
     paddingVertical: 3,
   },
-
-  // Card
   card: {
     backgroundColor: 'rgba(255,255,255,0.94)',
     borderRadius: 12,
@@ -205,12 +252,18 @@ const styles = StyleSheet.create({
     borderColor: '#9edbd2',
     backgroundColor: '#f0faf9',
   },
-
-  // Left circle
+  cardCurrent: {
+    borderColor: '#4361ee',
+    borderWidth: 2,
+  },
+  cardLocked: {
+    backgroundColor: '#f3f4f7',
+    borderColor: '#e5e7eb',
+  },
   numberCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     backgroundColor: '#edf2ff',
     alignItems: 'center',
     justifyContent: 'center',
@@ -219,16 +272,23 @@ const styles = StyleSheet.create({
   numberCircleCompleted: {
     backgroundColor: '#2a9d8f',
   },
+  numberCircleCurrent: {
+    backgroundColor: '#4361ee',
+  },
+  numberCircleLocked: {
+    backgroundColor: '#e5e7eb',
+  },
   numberText: {
-    fontSize: 16,
+    fontSize: 11,
     fontWeight: '900',
     color: '#4361ee',
   },
   numberTextCompleted: {
     color: '#ffffff',
   },
-
-  // Middle info
+  numberTextLocked: {
+    color: '#98a2b3',
+  },
   cardInfo: {
     flex: 1,
   },
@@ -236,12 +296,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
     color: '#12182f',
-    marginBottom: 5,
+    marginBottom: 2,
+  },
+  levelMeta: {
+    fontSize: 12,
+    color: '#667085',
+    marginBottom: 6,
+    fontWeight: '700',
   },
   difficultyBadge: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
+    flexWrap: 'wrap',
   },
   difficultyDot: {
     width: 8,
@@ -252,12 +319,19 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#6c757d',
   },
-
-  // Right arrow
-  cardArrow: {
-    fontSize: 16,
+  statusText: {
+    fontSize: 12,
+    color: '#4361ee',
     fontWeight: '800',
-    color: '#adb5bd',
     marginLeft: 8,
+  },
+  cardArrow: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#4361ee',
+    marginLeft: 8,
+  },
+  cardArrowLocked: {
+    color: '#98a2b3',
   },
 });

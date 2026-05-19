@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Animated,
   Image,
+  ScrollView,
   useWindowDimensions,
   SafeAreaView,
 } from 'react-native';
@@ -13,11 +14,13 @@ import { Redirect, router, useLocalSearchParams } from 'expo-router';
 
 import puzzlesData from '../assets/puzzles.json';
 import { getRewardImageSource } from '../utils/rewards';
+import { getLevelNumber, getNextPuzzleAfter } from '../utils/progression';
 
 export default function CompletionScreen() {
   const { id } = useLocalSearchParams();
   const { width } = useWindowDimensions();
   const puzzle = puzzlesData.find((p) => p.id === id);
+  const nextPuzzle = typeof id === 'string' ? getNextPuzzleAfter(id) : null;
 
   const tileAnims = useRef(
     Array.from({ length: 9 }, () => new Animated.Value(0))
@@ -42,16 +45,16 @@ export default function CompletionScreen() {
     return <Redirect href="/select" />;
   }
 
-  const imageSize = width - 64;
-  const tileSize = imageSize / 3;
+  const displayImageSize = Math.min(width - 32, 420);
+  const tileSize = displayImageSize / 3;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
         <Text style={styles.title}>Puzzle Complete!</Text>
         <Text style={styles.subtitle}>Your hidden image is revealed</Text>
 
-        <View style={[styles.imageGrid, { width: imageSize, height: imageSize }]}>
+        <View style={[styles.imageGrid, { width: displayImageSize, height: displayImageSize }]}>
           {tileAnims.map((anim, index) => {
             const row = Math.floor(index / 3);
             const col = index % 3;
@@ -83,8 +86,8 @@ export default function CompletionScreen() {
                   <Image
                     source={imageSource}
                     style={{
-                      width: imageSize,
-                      height: imageSize,
+                      width: displayImageSize,
+                      height: displayImageSize,
                       position: 'absolute',
                       top: -(row * tileSize),
                       left: -(col * tileSize),
@@ -98,15 +101,28 @@ export default function CompletionScreen() {
         </View>
 
         <Text style={styles.caption}>{puzzle.title}</Text>
+        <Text style={styles.nextLevelText}>
+          {nextPuzzle
+            ? `Level ${getLevelNumber(nextPuzzle.id)} unlocked`
+            : 'You cleared the final level'}
+        </Text>
 
         <TouchableOpacity
           style={styles.button}
-          onPress={() => router.replace('/')}
+          onPress={() => {
+            if (nextPuzzle) {
+              router.replace(`/puzzle?id=${nextPuzzle.id}`);
+              return;
+            }
+            router.replace('/select');
+          }}
           activeOpacity={0.8}
         >
-          <Text style={styles.buttonText}>Play Next Puzzle</Text>
+          <Text style={styles.buttonText}>
+            {nextPuzzle ? 'Play Next Level' : 'Back to Level Path'}
+          </Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
@@ -117,10 +133,11 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   container: {
-    flex: 1,
+    flexGrow: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingHorizontal: 32,
+    paddingHorizontal: 16,
+    paddingVertical: 24,
   },
   title: {
     fontSize: 28,
@@ -152,6 +169,12 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: '#adb5bd',
     letterSpacing: 0.5,
+  },
+  nextLevelText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#4361ee',
+    fontWeight: '700',
   },
   button: {
     marginTop: 32,

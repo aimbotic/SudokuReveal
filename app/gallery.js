@@ -47,11 +47,12 @@ export default function GalleryScreen() {
   const [completedIds, setCompletedIds] = useState([]);
   const [fullscreenItem, setFullscreen] = useState(null);
   const { width }                       = useWindowDimensions();
+  const contentWidth = Math.min(width - 24, 520);
 
   // Two columns with a gap between them
   const gap      = 10;
-  const padding  = 14;
-  const tileSize = (width - padding * 2 - gap) / 2;
+  const padding  = 0;
+  const tileSize = (contentWidth - gap) / 2;
 
   // Reload completed list every time this screen comes into focus
   useFocusEffect(
@@ -81,6 +82,7 @@ export default function GalleryScreen() {
 
       {/* Grid of tiles */}
       <FlatList
+        style={[styles.list, { width: contentWidth }]}
         data={GALLERY_ITEMS}
         keyExtractor={(item) => item.reward}
         numColumns={2}
@@ -198,7 +200,10 @@ const styles = StyleSheet.create({
 
   // Header
   header: {
-    paddingHorizontal: 22,
+    width: '100%',
+    maxWidth: 520,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
     paddingTop: 22,
     paddingBottom: 14,
   },
@@ -212,6 +217,9 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#667085',
     fontWeight: '600',
+  },
+  list: {
+    alignSelf: 'center',
   },
 
   // Tile

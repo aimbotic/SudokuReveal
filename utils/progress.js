@@ -1,5 +1,8 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
+import { enqueueSyncEvent, flushSyncQueue } from './offlineSync';
+import { loadPlayerProfile } from './player';
+
 // ─── Completed puzzle list ────────────────────────────────────────
 
 const COMPLETED_KEY = 'completed_puzzles';
@@ -15,13 +18,22 @@ export async function loadCompletedPuzzles() {
   }
 }
 
-export async function markPuzzleCompleted(puzzleId) {
+export async function markPuzzleCompleted(puzzleId, completion = {}) {
   try {
     const completed = await loadCompletedPuzzles();
     if (!completed.includes(puzzleId)) {
       completed.push(puzzleId);
       await AsyncStorage.setItem(COMPLETED_KEY, JSON.stringify(completed));
     }
+
+    const player = await loadPlayerProfile();
+    await enqueueSyncEvent('puzzle_completed', {
+      playerId: player.id,
+      puzzleId,
+      seconds: completion.seconds,
+      score: completion.score,
+    });
+    flushSyncQueue();
   } catch (error) {
     console.error('Failed to save progress:', error);
   }

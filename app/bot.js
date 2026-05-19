@@ -1,87 +1,102 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import {
   SafeAreaView,
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
+  ScrollView,
+  useWindowDimensions,
 } from 'react-native';
 import { router } from 'expo-router';
 
 import puzzlesData from '../assets/puzzles.json';
+import { BOT_ROSTER } from '../utils/bots';
 
-const BOT_LEVELS = [
-  {
-    id: 'easy',
-    name: 'Easy Bot',
-    label: 'Very Bad',
-    description: 'Skips lots of turns and moves slowly.',
-  },
-  {
-    id: 'medium',
-    name: 'Medium Bot',
-    label: 'Decent',
-    description: 'Sometimes misses a turn, but can keep pressure on you.',
-  },
-  {
-    id: 'hard',
-    name: 'Hard Bot',
-    label: 'Strong',
-    description: 'Rarely skips and solves at a steady pace.',
-  },
-  {
-    id: 'insane',
-    name: 'Insane Bot',
-    label: 'Very Good',
-    description: 'Takes a correct square almost every turn.',
-  },
-];
-
-function getPuzzleForBot(botId) {
-  return puzzlesData.find((puzzle) => puzzle.difficulty === botId) ?? puzzlesData[0];
+function getPuzzleForBot(bot) {
+  return puzzlesData.find((puzzle) => puzzle.difficulty === bot.difficulty) ?? puzzlesData[0];
 }
 
 export default function BotScreen() {
-  const [selectedBot, setSelectedBot] = useState('easy');
-  const selectedPuzzle = useMemo(() => getPuzzleForBot(selectedBot), [selectedBot]);
+  const { width, height } = useWindowDimensions();
+  const [selectedBotId, setSelectedBotId] = useState(BOT_ROSTER[0].id);
+  const selectedBot = BOT_ROSTER.find((bot) => bot.id === selectedBotId) ?? BOT_ROSTER[0];
+  const selectedPuzzle = getPuzzleForBot(selectedBot);
+  const contentWidth = Math.min(width - 24, 520);
+  const isSmallPhone = width <= 390;
+  const isShortPhone = height <= 760;
 
   function startBattle() {
-    router.push(`/puzzle?id=${selectedPuzzle.id}&mode=bot&bot=${selectedBot}`);
+    router.push(`/puzzle?id=${selectedPuzzle.id}&mode=bot&bot=${selectedBot.id}`);
   }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <View style={styles.container}>
+      <View
+        style={[
+          styles.container,
+          isShortPhone && styles.containerShort,
+          { width: contentWidth },
+        ]}
+      >
         <Text style={styles.kicker}>Turn-Based Offline Race</Text>
-        <Text style={styles.title}>Bot Battle</Text>
+        <Text style={[styles.title, isSmallPhone && styles.titleSmall]}>Choose Your Bot</Text>
         <Text style={styles.subtitle}>
-          Take a turn, then the bot gets a turn. Mistakes are unlimited.
+          Pick an opponent from the ladder. Every bot has a different pace, confidence level, and puzzle difficulty.
         </Text>
 
-        <View style={styles.botList}>
-          {BOT_LEVELS.map((bot) => {
-            const isActive = selectedBot === bot.id;
+        <ScrollView
+          style={styles.botList}
+          contentContainerStyle={styles.botListContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {BOT_ROSTER.map((bot) => {
+            const isActive = selectedBotId === bot.id;
             return (
               <TouchableOpacity
                 key={bot.id}
-                style={[styles.botCard, isActive && styles.botCardActive]}
-                onPress={() => setSelectedBot(bot.id)}
-                activeOpacity={0.78}
+                style={[
+                  styles.botCard,
+                  { backgroundColor: bot.panel, borderColor: bot.accent },
+                  isActive && styles.botCardActive,
+                ]}
+                onPress={() => setSelectedBotId(bot.id)}
+                activeOpacity={0.82}
               >
-                <View style={styles.botHeader}>
-                  <Text style={[styles.botName, isActive && styles.botNameActive]}>
-                    {bot.name}
-                  </Text>
-                  <Text style={[styles.botLabel, isActive && styles.botLabelActive]}>
-                    {bot.label}
+                <View style={[styles.avatar, isSmallPhone && styles.avatarSmall, { backgroundColor: bot.accent }]}>
+                  <Text style={styles.avatarText}>{bot.name.slice(0, 1)}</Text>
+                </View>
+
+                <View style={styles.botInfo}>
+                  <View style={styles.botTopRow}>
+                    <Text style={[styles.botName, isActive && styles.botNameActive]}>{bot.name}</Text>
+                    <Text style={[styles.botRating, isActive && styles.botRatingActive]}>{bot.rating}</Text>
+                  </View>
+
+                  <View style={styles.botMetaRow}>
+                    <Text style={[styles.botDifficulty, isActive && styles.botDifficultyActive]}>
+                      {bot.label}
+                    </Text>
+                    <Text style={[styles.botTagline, isActive && styles.botTaglineActive]}>
+                      {bot.tagline}
+                    </Text>
+                  </View>
+
+                  <Text style={[styles.botDescription, isActive && styles.botDescriptionActive]}>
+                    {bot.description}
                   </Text>
                 </View>
-                <Text style={[styles.botDescription, isActive && styles.botDescriptionActive]}>
-                  {bot.description}
-                </Text>
               </TouchableOpacity>
             );
           })}
+        </ScrollView>
+
+        <View style={styles.previewCard}>
+          <Text style={styles.previewLabel}>Selected Opponent</Text>
+          <Text style={styles.previewName}>{selectedBot.name}</Text>
+          <Text style={styles.previewSubtitle}>
+            {selectedBot.label} bot on a {selectedBot.difficulty} puzzle
+          </Text>
         </View>
 
         <TouchableOpacity style={styles.primaryButton} onPress={startBattle} activeOpacity={0.82}>
@@ -107,9 +122,12 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingHorizontal: 22,
-    paddingTop: 38,
-    paddingBottom: 30,
+    alignSelf: 'center',
+    paddingTop: 34,
+    paddingBottom: 24,
+  },
+  containerShort: {
+    paddingTop: 18,
   },
   kicker: {
     color: '#4361ee',
@@ -125,6 +143,9 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     marginBottom: 8,
   },
+  titleSmall: {
+    fontSize: 32,
+  },
   subtitle: {
     color: '#667085',
     fontSize: 15,
@@ -134,40 +155,88 @@ const styles = StyleSheet.create({
   },
   botList: {
     flex: 1,
+  },
+  botListContent: {
     gap: 10,
+    paddingBottom: 10,
   },
   botCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 14,
+    borderRadius: 18,
     padding: 16,
     borderWidth: 2,
-    borderColor: '#e7ebf3',
+    flexDirection: 'row',
+    alignItems: 'flex-start',
   },
   botCardActive: {
-    backgroundColor: '#1a1a2e',
-    borderColor: '#ffd166',
+    backgroundColor: '#12182f',
   },
-  botHeader: {
+  avatar: {
+    width: 54,
+    height: 54,
+    borderRadius: 27,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 14,
+  },
+  avatarSmall: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    marginRight: 12,
+  },
+  avatarText: {
+    color: '#ffffff',
+    fontSize: 24,
+    fontWeight: '900',
+  },
+  botInfo: {
+    flex: 1,
+  },
+  botTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 7,
+    marginBottom: 4,
   },
   botName: {
     color: '#12182f',
-    fontSize: 18,
+    fontSize: 19,
     fontWeight: '900',
   },
   botNameActive: {
     color: '#ffffff',
   },
-  botLabel: {
+  botRating: {
+    color: '#12182f',
+    fontSize: 16,
+    fontWeight: '900',
+  },
+  botRatingActive: {
+    color: '#ffd166',
+  },
+  botMetaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginBottom: 7,
+  },
+  botDifficulty: {
     color: '#4361ee',
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '900',
     textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  botLabelActive: {
+  botDifficultyActive: {
+    color: '#8bd3ff',
+  },
+  botTagline: {
+    color: '#475569',
+    fontSize: 12,
+    fontWeight: '800',
+    textTransform: 'uppercase',
+  },
+  botTaglineActive: {
     color: '#ffd166',
   },
   botDescription: {
@@ -177,14 +246,42 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   botDescriptionActive: {
-    color: '#c8d0f5',
+    color: '#d8e2ff',
+  },
+  previewCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: '#e7ebf3',
+    marginTop: 12,
+    marginBottom: 12,
+  },
+  previewLabel: {
+    color: '#667085',
+    fontSize: 11,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  previewName: {
+    color: '#12182f',
+    fontSize: 22,
+    fontWeight: '900',
+    marginBottom: 2,
+  },
+  previewSubtitle: {
+    color: '#4361ee',
+    fontSize: 14,
+    fontWeight: '700',
   },
   primaryButton: {
     backgroundColor: '#4361ee',
     borderRadius: 16,
     paddingVertical: 18,
     alignItems: 'center',
-    marginTop: 18,
     marginBottom: 12,
   },
   primaryButtonText: {

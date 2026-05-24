@@ -21,7 +21,7 @@ import {
   loadSelectedBackground,
   selectBuiltInBackground,
 } from '../utils/background';
-import { getPendingSyncCount } from '../utils/offlineSync';
+import { flushSyncQueue, getPendingSyncCount } from '../utils/offlineSync';
 import { loadPlayerProfile, savePlayerProfile } from '../utils/player';
 import { isSupabaseConfigured } from '../utils/supabase';
 
@@ -30,6 +30,7 @@ export default function SettingsScreen() {
   const [playerProfile, setPlayerProfile] = useState(null);
   const [displayNameDraft, setDisplayNameDraft] = useState('');
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
+  const [isSyncing, setIsSyncing] = useState(false);
   const { width } = useWindowDimensions();
   const contentWidth = Math.min(width - 24, 520);
   const isSmallPhone = width <= 390;
@@ -44,11 +45,23 @@ export default function SettingsScreen() {
         const profile = await loadPlayerProfile();
         setPlayerProfile(profile);
         setDisplayNameDraft(profile.displayName);
-        setPendingSyncCount(await getPendingSyncCount());
+        await refreshSyncStatus();
       }
       fetchSettings();
     }, [])
   );
+
+  async function refreshSyncStatus() {
+    if (isSupabaseConfigured()) {
+      setIsSyncing(true);
+      const result = await flushSyncQueue();
+      setPendingSyncCount(result.pending);
+      setIsSyncing(false);
+      return;
+    }
+
+    setPendingSyncCount(await getPendingSyncCount());
+  }
 
   async function handleSelectBuiltIn(backgroundId) {
     setBackgroundSelection(await selectBuiltInBackground(backgroundId));
@@ -70,8 +83,16 @@ export default function SettingsScreen() {
     const profile = await savePlayerProfile({ displayName: displayNameDraft });
     setPlayerProfile(profile);
     setDisplayNameDraft(profile.displayName);
-    setPendingSyncCount(await getPendingSyncCount());
+    await refreshSyncStatus();
   }
+
+  const syncStatusText = isSupabaseConfigured()
+    ? isSyncing
+      ? 'syncing...'
+      : pendingSyncCount > 0
+        ? `${pendingSyncCount} pending`
+        : 'synced'
+    : 'offline-only until Supabase env is set';
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -100,7 +121,7 @@ export default function SettingsScreen() {
             Local ID: {playerProfile?.id ?? 'Loading...'}
           </Text>
           <Text style={styles.profileMeta}>
-            Sync: {isSupabaseConfigured() ? `${pendingSyncCount} pending` : 'offline-only until Supabase env is set'}
+            Sync: {syncStatusText}
           </Text>
           <TouchableOpacity
             style={styles.profileSaveButton}

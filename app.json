@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "Sudoku Infinite",
+    "owner": "aimbotic",
     "slug": "sudoku-reveal",
     "version": "1.0.0",
     "scheme": "sudokureveal",
@@ -18,6 +19,14 @@
         "backgroundColor": "#ffffff"
       }
     },
+    "ios": {
+      "bundleIdentifier": "com.aimbotic.sudokuinfinite",
+      "icon": "./assets/apple-icon-sudoku-reveal.png",
+      "supportsTablet": false,
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
     "web": {
       "bundler": "metro",
       "output": "static",
@@ -28,6 +37,12 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "2219145b-ae95-4778-be5d-e3ad57ee138c"
+      }
+    }
   }
 }

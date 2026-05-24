@@ -41,7 +41,9 @@ export default function HomeScreen() {
   const contentShift = useRef(new Animated.Value(0)).current;
   const transitionOpacity = useRef(new Animated.Value(0)).current;
   const isCompactPhone = width <= 430;
+  const isTinyPhone = width <= 360;
   const isShortPhone = height <= 780;
+  const isVeryShortPhone = height <= 700;
   const contentWidth = Math.min(width - (isCompactPhone ? 24 : 40), 460);
 
   useFocusEffect(
@@ -124,6 +126,7 @@ export default function HomeScreen() {
           contentContainerStyle={[
             styles.scrollContent,
             isShortPhone && styles.scrollContentCompact,
+            isVeryShortPhone && styles.scrollContentShort,
           ]}
           bounces={false}
           showsVerticalScrollIndicator={false}
@@ -139,7 +142,9 @@ export default function HomeScreen() {
             ]}
           >
             <View style={[styles.topSection, isShortPhone && styles.topSectionCompact]}>
-              <Text style={[styles.title, isCompactPhone && styles.titleCompact]}>Sudoku Infinite</Text>
+              <Text style={[styles.title, isCompactPhone && styles.titleCompact, isTinyPhone && styles.titleTiny]}>
+                Sudoku Infinite
+              </Text>
               <Text style={[styles.subtitle, isCompactPhone && styles.subtitleCompact]}>
                 Solve. Score. Keep Going.
               </Text>
@@ -148,7 +153,11 @@ export default function HomeScreen() {
             {selectedMode === null ? (
               <View style={styles.modeSection}>
                 <TouchableOpacity
-                  style={[styles.modeButton, isCompactPhone && styles.modeButtonCompact]}
+                  style={[
+                    styles.modeButton,
+                    isCompactPhone && styles.modeButtonCompact,
+                    isVeryShortPhone && styles.modeButtonShort,
+                  ]}
                   onPress={() => runModeTransition('Offline Play', () => setSelectedMode('offline'))}
                   activeOpacity={0.82}
                   disabled={isTransitioning}
@@ -166,6 +175,7 @@ export default function HomeScreen() {
                     styles.modeButton,
                     styles.modeButtonOnline,
                     isCompactPhone && styles.modeButtonCompact,
+                    isVeryShortPhone && styles.modeButtonShort,
                   ]}
                   onPress={() => runModeTransition('Online Play', () => router.push('/online'))}
                   activeOpacity={0.82}
@@ -187,43 +197,19 @@ export default function HomeScreen() {
                       isCompactPhone && styles.modeButtonTextCompact,
                     ]}
                   >
-                    Race to finish the board first.
-                  </Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={[
-                    styles.modeButton,
-                    styles.modeButtonRanked,
-                    isCompactPhone && styles.modeButtonCompact,
-                  ]}
-                  onPress={() => runModeTransition('Ranked Mode', () => router.push('/ranked'))}
-                  activeOpacity={0.82}
-                  disabled={isTransitioning}
-                >
-                  <Text
-                    style={[
-                      styles.modeButtonTitle,
-                      styles.modeButtonTitleRanked,
-                      isCompactPhone && styles.modeButtonTitleCompact,
-                    ]}
-                  >
-                    Ranked Mode
-                  </Text>
-                  <Text
-                    style={[
-                      styles.modeButtonText,
-                      styles.modeButtonTextRanked,
-                      isCompactPhone && styles.modeButtonTextCompact,
-                    ]}
-                  >
-                    Climb from Iron to Masters.
+                    Play friends for fun or ranked against random players.
                   </Text>
                 </TouchableOpacity>
               </View>
             ) : (
               <>
-                <View style={[styles.progressCard, isCompactPhone && styles.progressCardCompact]}>
+                <View
+                  style={[
+                    styles.progressCard,
+                    isCompactPhone && styles.progressCardCompact,
+                    isVeryShortPhone && styles.progressCardShort,
+                  ]}
+                >
                   <View style={[styles.progressHeader, isCompactPhone && styles.progressHeaderCompact]}>
                     <Text style={[styles.progressNumber, isCompactPhone && styles.progressNumberCompact]}>
                       {progressPercent}%
@@ -385,6 +371,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: 14,
   },
+  scrollContentShort: {
+    paddingTop: 10,
+    paddingBottom: 16,
+  },
   backgroundImage: {
     opacity: 1,
   },
@@ -403,6 +393,7 @@ const styles = StyleSheet.create({
   topSectionCompact: { marginBottom: 20 },
   title: { fontSize: 38, fontWeight: '900', color: '#12182f', marginBottom: 6, textAlign: 'center' },
   titleCompact: { fontSize: 34 },
+  titleTiny: { fontSize: 30 },
   subtitle: { fontSize: 15, color: '#667085', fontWeight: '600', textAlign: 'center' },
   subtitleCompact: { fontSize: 14 },
   modeSection: {
@@ -428,15 +419,14 @@ const styles = StyleSheet.create({
     minHeight: 128,
     padding: 20,
   },
+  modeButtonShort: {
+    minHeight: 108,
+    padding: 18,
+  },
   modeButtonOnline: {
     backgroundColor: '#06d6a0',
     shadowColor: '#06d6a0',
     shadowOpacity: 0.28,
-  },
-  modeButtonRanked: {
-    backgroundColor: '#111827',
-    shadowColor: '#111827',
-    shadowOpacity: 0.22,
   },
   modeButtonTitle: {
     color: '#ffffff',
@@ -450,9 +440,6 @@ const styles = StyleSheet.create({
   modeButtonTitleOnline: {
     color: '#061b16',
   },
-  modeButtonTitleRanked: {
-    color: '#ffd166',
-  },
   modeButtonText: {
     color: '#e8ecff',
     fontSize: 15,
@@ -465,9 +452,6 @@ const styles = StyleSheet.create({
   },
   modeButtonTextOnline: {
     color: '#063b31',
-  },
-  modeButtonTextRanked: {
-    color: '#d8e2ff',
   },
   progressCard: {
     backgroundColor: 'rgba(255,255,255,0.92)',
@@ -486,6 +470,10 @@ const styles = StyleSheet.create({
   },
   progressCardCompact: {
     padding: 20,
+  },
+  progressCardShort: {
+    padding: 16,
+    marginBottom: 14,
   },
   progressHeader: {
     alignItems: 'center',

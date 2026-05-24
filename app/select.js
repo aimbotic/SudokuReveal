@@ -37,6 +37,7 @@ export default function SelectScreen() {
   const { width } = useWindowDimensions();
   const [completedIds, setCompletedIds] = useState([]);
   const contentWidth = Math.min(width - 24, 520);
+  const isSmallPhone = width <= 390;
 
   useFocusEffect(
     useCallback(() => {
@@ -101,6 +102,7 @@ export default function SelectScreen() {
             <TouchableOpacity
               style={[
                 styles.card,
+                isSmallPhone && styles.cardSmall,
                 isCompleted && styles.cardCompleted,
                 isCurrent && styles.cardCurrent,
                 !isUnlocked && styles.cardLocked,
@@ -112,6 +114,7 @@ export default function SelectScreen() {
               <View
                 style={[
                   styles.numberCircle,
+                  isSmallPhone && styles.numberCircleSmall,
                   isCompleted && styles.numberCircleCompleted,
                   isCurrent && styles.numberCircleCurrent,
                   !isUnlocked && styles.numberCircleLocked,
@@ -130,7 +133,9 @@ export default function SelectScreen() {
               </View>
 
               <View style={styles.cardInfo}>
-                <Text style={styles.cardTitle}>{item.title}</Text>
+                <Text style={[styles.cardTitle, isSmallPhone && styles.cardTitleSmall]} numberOfLines={1}>
+                  {item.title}
+                </Text>
                 <Text style={styles.levelMeta}>Level {levelNumber}</Text>
                 <View style={styles.difficultyBadge}>
                   <View
@@ -148,7 +153,10 @@ export default function SelectScreen() {
                 </View>
               </View>
 
-              <Text style={[styles.cardArrow, !isUnlocked && styles.cardArrowLocked]}>
+              <Text
+                style={[styles.cardArrow, isSmallPhone && styles.cardArrowSmall, !isUnlocked && styles.cardArrowLocked]}
+                numberOfLines={1}
+              >
                 {isCompleted ? 'Done' : isUnlocked ? 'Play' : 'Locked'}
               </Text>
             </TouchableOpacity>
@@ -248,6 +256,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: '#e7ebf3',
   },
+  cardSmall: {
+    padding: 12,
+  },
   cardCompleted: {
     borderColor: '#9edbd2',
     backgroundColor: '#f0faf9',
@@ -268,6 +279,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 14,
+  },
+  numberCircleSmall: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    marginRight: 10,
   },
   numberCircleCompleted: {
     backgroundColor: '#2a9d8f',
@@ -297,6 +314,9 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#12182f',
     marginBottom: 2,
+  },
+  cardTitleSmall: {
+    fontSize: 15,
   },
   levelMeta: {
     fontSize: 12,
@@ -330,6 +350,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     color: '#4361ee',
     marginLeft: 8,
+  },
+  cardArrowSmall: {
+    maxWidth: 48,
+    fontSize: 12,
   },
   cardArrowLocked: {
     color: '#98a2b3',

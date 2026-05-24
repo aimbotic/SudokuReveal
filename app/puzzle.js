@@ -28,7 +28,12 @@ import {
   loadSelectedBackground,
 } from '../utils/background';
 import { getBotById } from '../utils/bots';
-import { recordRankedLoss, recordRankedWin } from '../utils/ranked';
+import {
+  RANKED_LOSS_RP,
+  RANKED_WIN_RP,
+  recordRankedLoss,
+  recordRankedWin,
+} from '../utils/ranked';
 
 const SETTINGS_KEY = 'puzzle_feature_settings';
 const MAX_MISTAKES = 3;
@@ -418,7 +423,7 @@ async function saveFeatureSettings(settings) {
 // ─── Main Screen ─────────────────────────────────────────────────
 
 export default function PuzzleScreen() {
-  const { id, mode, room, bot } = useLocalSearchParams();
+  const { id, mode, room, bot, opponent } = useLocalSearchParams();
   const puzzle = puzzlesData.find((p) => p.id === id);
   const isRankedMode = mode === 'ranked';
   const isOnlineRace = mode === 'race' || isRankedMode;
@@ -426,6 +431,7 @@ export default function PuzzleScreen() {
   const botProfile = getBotById(bot);
   const isProgressMode = !isOnlineRace && !isBotBattle;
   const roomCode = typeof room === 'string' ? room : 'QUICK';
+  const opponentName = typeof opponent === 'string' ? opponent : 'Opponent';
 
   // All null until we load from storage —
   // prevents a flash of empty grid before data arrives
@@ -448,6 +454,7 @@ export default function PuzzleScreen() {
   const [isAdOpen, setIsAdOpen]         = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isRaceShielded, setIsRaceShielded] = useState(false);
+  const [pregameCountdown, setPregameCountdown] = useState(null);
   const [isBotThinking, setIsBotThinking] = useState(false);
   const [botResult, setBotResult]       = useState(null);
   const [botTurnToken, setBotTurnToken] = useState(0);
@@ -485,11 +492,24 @@ export default function PuzzleScreen() {
   const { width, height } = useWindowDimensions();
   const isCompactPhone                = width <= 430;
   const isTightPhone                  = width <= 390;
+  const isTinyPhone                   = width <= 360;
   const isShortPhone                  = height <= 820;
-  const singleGridSize                = Math.min(width - (isCompactPhone ? 24 : 32), 520);
+  const isVeryShortPhone              = height <= 700;
+  const verticalChromeEstimate        =
+    (isOnlineRace || isBotBattle)
+      ? (isVeryShortPhone ? 262 : isShortPhone ? 286 : 318)
+      : (isVeryShortPhone ? 226 : isShortPhone ? 250 : 284);
+  const singleGridSize                = Math.max(
+    isTinyPhone ? 292 : 318,
+    Math.min(width - (isCompactPhone ? 20 : 32), height - verticalChromeEstimate, 520)
+  );
   const battleGridSize                = Math.max(
-    isTightPhone ? 154 : 164,
-    Math.min((width - (isCompactPhone ? 34 : 44)) / 2, isCompactPhone ? 190 : 260)
+    isTinyPhone ? 138 : isTightPhone ? 148 : 160,
+    Math.min(
+      (width - (isCompactPhone ? 30 : 44)) / 2,
+      height * (isVeryShortPhone ? 0.2 : 0.235),
+      isCompactPhone ? 184 : 250
+    )
   );
 
   useFocusEffect(
@@ -545,6 +565,7 @@ export default function PuzzleScreen() {
     setIsPaused(false);
     setIsSolved(false);
     setIsFailed(false);
+    setPregameCountdown(isOnlineRace ? 3 : null);
     setBotResult(null);
     setIsBotThinking(false);
     setBotTurnToken(0);
@@ -594,16 +615,30 @@ export default function PuzzleScreen() {
       setIsLoaded(true);
     }
     restore();
-  }, [puzzle?.id, isProgressMode]);
+  }, [puzzle?.id, isProgressMode, isOnlineRace]);
 
   // ── Start timer after load ────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || isPaused || isSolved || isFailed) return;
+    if (!isLoaded || isPaused || isSolved || isFailed || pregameCountdown !== null) return;
     timerRef.current = setInterval(() => {
       setSeconds((s) => s + 1);
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isLoaded, isPaused, isSolved, isFailed]);
+  }, [isLoaded, isPaused, isSolved, isFailed, pregameCountdown]);
+
+  useEffect(() => {
+    if (!isLoaded || pregameCountdown === null) return undefined;
+
+    const countdownTimer = setTimeout(() => {
+      setPregameCountdown((current) => {
+        if (current === null) return null;
+        if (current <= 1) return null;
+        return current - 1;
+      });
+    }, 900);
+
+    return () => clearTimeout(countdownTimer);
+  }, [isLoaded, pregameCountdown]);
 
   // ── Stop timer on solve ───────────────────────────────────────
   useEffect(() => {
@@ -618,6 +653,7 @@ export default function PuzzleScreen() {
   }
 
   function handleCellPress(row, col) {
+    if (pregameCountdown !== null) return;
     if (isBotThinking) return;
     setSelectedCell({ row, col });
   }
@@ -850,6 +886,7 @@ export default function PuzzleScreen() {
     setIsNoteMode(false);
     setIsPaused(false);
     setIsFailed(false);
+    setPregameCountdown(isOnlineRace ? 3 : null);
     setBotResult(null);
     setIsBotThinking(false);
     setBotTurnToken(0);
@@ -945,6 +982,7 @@ export default function PuzzleScreen() {
   }
 
   async function handleHintPress() {
+    if (pregameCountdown !== null) return;
     if (!featureSettings.hints) return;
     if (!getHintCell()) return;
 
@@ -961,6 +999,7 @@ export default function PuzzleScreen() {
   }
 
   async function handleNumberPress(number) {
+    if (pregameCountdown !== null) return;
     if (isBotThinking || botResult !== null) return;
     if (selectedCell === null) return;
     const { row, col } = selectedCell;
@@ -1218,7 +1257,7 @@ export default function PuzzleScreen() {
               {isRankedMode ? 'Ranked Match' : `Race Room ${roomCode}`}
             </Text>
             <Text style={styles.raceBannerText}>
-              {isRankedMode ? '+75 RP for a win' : 'First full board wins'}
+              {isRankedMode ? `Beat ${opponentName} for +${RANKED_WIN_RP} RP` : 'First full board wins'}
             </Text>
           </View>
         )}
@@ -1240,6 +1279,7 @@ export default function PuzzleScreen() {
             styles.header,
             isCompactPhone && styles.headerCompact,
             isShortPhone && styles.headerShort,
+            isVeryShortPhone && styles.headerVeryShort,
           ]}
         >
           <View style={[styles.headerInfo, isCompactPhone && styles.headerInfoCompact]}>
@@ -1265,12 +1305,19 @@ export default function PuzzleScreen() {
             )}
           </View>
           <Text style={[styles.scoreText, isCompactPhone && styles.scoreTextCompact]}>{score}</Text>
-          <View style={[styles.headerActions, isCompactPhone && styles.headerActionsCompact]}>
+          <View
+            style={[
+              styles.headerActions,
+              isCompactPhone && styles.headerActionsCompact,
+              isTinyPhone && styles.headerActionsTiny,
+            ]}
+          >
             <TouchableOpacity
               style={[
                 styles.headerIconButton,
                 isDarkMode && styles.controlDark,
                 isCompactPhone && styles.headerIconButtonCompact,
+                isTinyPhone && styles.headerIconButtonTiny,
               ]}
               onPress={() => router.replace('/')}
               activeOpacity={0.7}
@@ -1296,6 +1343,7 @@ export default function PuzzleScreen() {
                   styles.headerIconButton,
                   isDarkMode && styles.controlDark,
                   isCompactPhone && styles.headerIconButtonCompact,
+                  isTinyPhone && styles.headerIconButtonTiny,
                 ]}
                 onPress={() => setIsPaused(true)}
                 activeOpacity={0.7}
@@ -1310,6 +1358,7 @@ export default function PuzzleScreen() {
                 styles.headerIconButton,
                 isDarkMode && styles.controlDark,
                 isCompactPhone && styles.headerIconButtonCompact,
+                isTinyPhone && styles.headerIconButtonTiny,
               ]}
               onPress={() => setIsSettingsOpen(true)}
               activeOpacity={0.7}
@@ -1411,7 +1460,13 @@ export default function PuzzleScreen() {
 
         <View style={styles.bottomControlsBand}>
           {/* Undo button */}
-          <View style={[styles.actionRow, isCompactPhone && styles.actionRowCompact]}>
+          <View
+            style={[
+              styles.actionRow,
+              isCompactPhone && styles.actionRowCompact,
+              isVeryShortPhone && styles.actionRowShort,
+            ]}
+          >
             <TouchableOpacity
               style={[
                     styles.actionButton,
@@ -1494,6 +1549,7 @@ export default function PuzzleScreen() {
             isNoteFeatureEnabled={featureSettings.notes}
             isDarkMode={isDarkMode}
             isCompactPhone={isCompactPhone}
+            isShortPhone={isVeryShortPhone}
             onNumberPress={handleNumberPress}
           />
         </View>
@@ -1508,9 +1564,10 @@ export default function PuzzleScreen() {
         time={formatTime(seconds)}
         isRaceMode={isOnlineRace}
         isRankedMode={isRankedMode}
+        rpDelta={RANKED_WIN_RP}
         onReveal={() => {
           if (isRankedMode) {
-            router.replace('/ranked');
+            router.replace('/online');
           } else if (isOnlineRace) {
             router.replace('/online');
           } else {
@@ -1529,6 +1586,13 @@ export default function PuzzleScreen() {
       />
 
       <RacePrivacyShield visible={isOnlineRace && isRaceShielded && !isSolved && !isFailed} />
+
+      <CountdownOverlay
+        visible={pregameCountdown !== null && isLoaded && !isSolved && !isFailed}
+        count={pregameCountdown}
+        isRankedMode={isRankedMode}
+        opponentName={opponentName}
+      />
 
       <SettingsModal
         visible={isSettingsOpen}
@@ -1554,6 +1618,8 @@ export default function PuzzleScreen() {
 
       <FailedModal
         visible={isFailed && !isBotBattle}
+        isRankedMode={isRankedMode}
+        rpDelta={RANKED_LOSS_RP}
         onRestart={restartCurrentPuzzle}
       />
 
@@ -1998,7 +2064,7 @@ function PauseModal({ visible, time, isDarkMode, onResume }) {
   );
 }
 
-function FailedModal({ visible, onRestart }) {
+function FailedModal({ visible, isRankedMode, rpDelta, onRestart }) {
   return (
     <Modal
       visible={visible}
@@ -2009,7 +2075,14 @@ function FailedModal({ visible, onRestart }) {
       <SafeAreaView style={styles.failedScreen}>
         <View style={styles.failedContent}>
           <Text style={styles.failedTitle}>You Failed</Text>
-          <Text style={styles.failedSubtitle}>Three mistakes ends the attempt.</Text>
+          {isRankedMode && (
+            <Text style={styles.rankedLossText}>-{rpDelta} RP</Text>
+          )}
+          <Text style={styles.failedSubtitle}>
+            {isRankedMode
+              ? 'Three mistakes ends the ranked match.'
+              : 'Three mistakes ends the attempt.'}
+          </Text>
           <TouchableOpacity
             style={styles.failedRestartButton}
             onPress={onRestart}
@@ -2023,7 +2096,7 @@ function FailedModal({ visible, onRestart }) {
   );
 }
 
-function WinModal({ visible, time, isRaceMode, isRankedMode, onReveal }) {
+function WinModal({ visible, time, isRaceMode, isRankedMode, rpDelta, onReveal }) {
   return (
     <Modal
       visible={visible}
@@ -2035,6 +2108,9 @@ function WinModal({ visible, time, isRaceMode, isRankedMode, onReveal }) {
 
           <Text style={styles.modalEmoji}>{isRaceMode ? '🏁' : '🎉'}</Text>
           <Text style={styles.modalTitle}>{isRaceMode ? 'You Won!' : 'Puzzle Solved!'}</Text>
+          {isRankedMode && (
+            <Text style={styles.rankedWinText}>+{rpDelta} RP</Text>
+          )}
           <Text style={styles.modalTime}>{isRaceMode ? `Winning time ${time}` : `Completed in ${time}`}</Text>
           <Text style={styles.modalSubtitle}>
             {isRaceMode
@@ -2195,6 +2271,20 @@ function RacePrivacyShield({ visible }) {
     <View pointerEvents="auto" style={styles.racePrivacyShield}>
       <Text style={styles.racePrivacyTitle}>Race Shield Active</Text>
       <Text style={styles.racePrivacyText}>Return to the game window to show the board.</Text>
+    </View>
+  );
+}
+
+function CountdownOverlay({ visible, count, isRankedMode, opponentName }) {
+  if (!visible) return null;
+
+  return (
+    <View pointerEvents="auto" style={styles.countdownOverlay}>
+      <Text style={styles.countdownKicker}>
+        {isRankedMode ? `Ranked vs ${opponentName}` : 'Friend Race'}
+      </Text>
+      <Text style={styles.countdownNumber}>{count}</Text>
+      <Text style={styles.countdownText}>Get ready</Text>
     </View>
   );
 }
@@ -2422,32 +2512,59 @@ function SudokuCell({
 
 // ─── Number Pad ──────────────────────────────────────────────────
 
-function NumberPad({ isNoteMode, isNoteFeatureEnabled, isDarkMode, isCompactPhone, onNumberPress }) {
+function NumberPad({
+  isNoteMode,
+  isNoteFeatureEnabled,
+  isDarkMode,
+  isCompactPhone,
+  isShortPhone,
+  onNumberPress,
+}) {
   return (
-    <View style={[styles.padContainer, isCompactPhone && styles.padContainerCompact]}>
+    <View
+      style={[
+        styles.padContainer,
+        isCompactPhone && styles.padContainerCompact,
+        isShortPhone && styles.padContainerShort,
+      ]}
+    >
       {isNoteFeatureEnabled && (
-        <Text style={[styles.padModeText, isDarkMode && styles.subtleTextDark]}>
+        <Text
+          style={[
+            styles.padModeText,
+            isDarkMode && styles.subtleTextDark,
+            isShortPhone && styles.padModeTextShort,
+          ]}
+        >
           {isNoteMode ? 'Adding notes' : 'Entering answers'}
         </Text>
       )}
-
-      <View style={[styles.padRow, isCompactPhone && styles.padRowCompact]}>
+  
+      <View
+        style={[
+          styles.padRow,
+          isCompactPhone && styles.padRowCompact,
+          isShortPhone && styles.padRowShort,
+        ]}
+      >
         {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
           <TouchableOpacity
             key={n}
             style={[
-              styles.padButton,
-              isDarkMode && styles.controlDark,
-              isCompactPhone && styles.padButtonCompact,
+                styles.padButton,
+                isDarkMode && styles.controlDark,
+                isCompactPhone && styles.padButtonCompact,
+                isShortPhone && styles.padButtonShort,
             ]}
             onPress={() => onNumberPress(n)}
             activeOpacity={0.7}
           >
             <Text
               style={[
-                styles.padButtonText,
-                isDarkMode && styles.headingDark,
-                isCompactPhone && styles.padButtonTextCompact,
+                  styles.padButtonText,
+                  isDarkMode && styles.headingDark,
+                  isCompactPhone && styles.padButtonTextCompact,
+                  isShortPhone && styles.padButtonTextShort,
               ]}
             >
               {n}
@@ -2458,9 +2575,10 @@ function NumberPad({ isNoteMode, isNoteFeatureEnabled, isDarkMode, isCompactPhon
 
       <TouchableOpacity
         style={[
-          styles.eraseButton,
-          isDarkMode && styles.controlDark,
-          isCompactPhone && styles.eraseButtonCompact,
+            styles.eraseButton,
+            isDarkMode && styles.controlDark,
+            isCompactPhone && styles.eraseButtonCompact,
+            isShortPhone && styles.eraseButtonShort,
         ]}
         onPress={() => onNumberPress(0)}
         activeOpacity={0.7}
@@ -2512,6 +2630,11 @@ const styles = StyleSheet.create({
   },
   headerShort: {
     paddingTop: 24,
+  },
+  headerVeryShort: {
+    minHeight: 66,
+    paddingTop: 18,
+    marginBottom: 6,
   },
   raceBanner: {
     marginHorizontal: 14,
@@ -2589,6 +2712,9 @@ const styles = StyleSheet.create({
   headerActionsCompact: {
     gap: 6,
   },
+  headerActionsTiny: {
+    gap: 4,
+  },
   settingsButton: {
     width: 44,
     height: 44,
@@ -2626,6 +2752,12 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 18,
     paddingHorizontal: 8,
+  },
+  headerIconButtonTiny: {
+    minWidth: 32,
+    height: 32,
+    borderRadius: 16,
+    paddingHorizontal: 6,
   },
   headerIconButtonText: {
     fontSize: 13,
@@ -2995,6 +3127,9 @@ const styles = StyleSheet.create({
     paddingTop: 12,
     gap: 6,
   },
+  actionRowShort: {
+    paddingTop: 8,
+  },
   actionButton: {
     flex: 1,
     flexDirection: 'row',
@@ -3040,12 +3175,18 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingTop: 8,
   },
+  padContainerShort: {
+    paddingTop: 6,
+  },
   padModeText: {
     fontSize: 12,
     color: '#6c757d',
     marginBottom: 7,
     textTransform: 'uppercase',
     letterSpacing: 1,
+  },
+  padModeTextShort: {
+    marginBottom: 4,
   },
   padRow: {
     flexDirection: 'row',
@@ -3055,6 +3196,9 @@ const styles = StyleSheet.create({
   },
   padRowCompact: {
     marginBottom: 10,
+  },
+  padRowShort: {
+    marginBottom: 8,
   },
   padButton: {
     flex: 1,
@@ -3073,8 +3217,12 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 8,
   },
+  padButtonShort: {
+    paddingVertical: 9,
+  },
   padButtonText: { fontSize: 20, fontWeight: '800', color: '#ffffff' },
   padButtonTextCompact: { fontSize: 18 },
+  padButtonTextShort: { fontSize: 17 },
   eraseButton: {
     paddingVertical: 14,
     paddingHorizontal: 40,
@@ -3090,6 +3238,10 @@ const styles = StyleSheet.create({
   eraseButtonCompact: {
     paddingVertical: 12,
     paddingHorizontal: 30,
+  },
+  eraseButtonShort: {
+    paddingVertical: 10,
+    paddingHorizontal: 26,
   },
   eraseButtonText: { fontSize: 15, fontWeight: '800', color: '#e63946' },
 
@@ -3137,6 +3289,52 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textAlign: 'center',
     lineHeight: 23,
+  },
+  rankedWinText: {
+    color: '#06d6a0',
+    fontSize: 34,
+    fontWeight: '900',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  rankedLossText: {
+    color: '#ffffff',
+    fontSize: 40,
+    fontWeight: '900',
+    marginBottom: 12,
+  },
+  countdownOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 120,
+    backgroundColor: 'rgba(5,8,22,0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  countdownKicker: {
+    color: '#06d6a0',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  countdownNumber: {
+    color: '#ffffff',
+    fontSize: 96,
+    fontWeight: '900',
+    lineHeight: 104,
+    fontVariant: ['tabular-nums'],
+  },
+  countdownText: {
+    color: '#c8d0f5',
+    fontSize: 18,
+    fontWeight: '800',
+    marginTop: 8,
   },
   settingsCard: {
     backgroundColor: '#ffffff',

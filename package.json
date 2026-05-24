@@ -7,6 +7,8 @@
     "go": "expo start --tunnel",
     "android": "expo start --android",
     "ios": "expo start --ios",
+    "dev:client": "expo start --dev-client --tunnel",
+    "build:ios:dev": "npx eas-cli build --profile development --platform ios",
     "web": "expo start --web",
     "predeploy": "expo export -p web",
     "deploy": "gh-pages --nojekyll -d dist"
@@ -16,6 +18,7 @@
     "@supabase/supabase-js": "^2.106.0",
     "expo": "~55.0.24",
     "expo-av": "^16.0.8",
+    "expo-dev-client": "~55.0.35",
     "expo-image-picker": "~55.0.20",
     "expo-linking": "~55.0.15",
     "expo-router": "~55.0.14",

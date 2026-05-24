@@ -24,6 +24,7 @@ export default function BotScreen() {
   const selectedPuzzle = getPuzzleForBot(selectedBot);
   const contentWidth = Math.min(width - 24, 520);
   const isSmallPhone = width <= 390;
+  const isTinyPhone = width <= 360;
   const isShortPhone = height <= 760;
 
   function startBattle() {
@@ -57,6 +58,7 @@ export default function BotScreen() {
                 key={bot.id}
                 style={[
                   styles.botCard,
+                  isSmallPhone && styles.botCardSmall,
                   { backgroundColor: bot.panel, borderColor: bot.accent },
                   isActive && styles.botCardActive,
                 ]}
@@ -69,7 +71,12 @@ export default function BotScreen() {
 
                 <View style={styles.botInfo}>
                   <View style={styles.botTopRow}>
-                    <Text style={[styles.botName, isActive && styles.botNameActive]}>{bot.name}</Text>
+                    <Text
+                      style={[styles.botName, isTinyPhone && styles.botNameTiny, isActive && styles.botNameActive]}
+                      numberOfLines={1}
+                    >
+                      {bot.name}
+                    </Text>
                     <Text style={[styles.botRating, isActive && styles.botRatingActive]}>{bot.rating}</Text>
                   </View>
 
@@ -77,12 +84,18 @@ export default function BotScreen() {
                     <Text style={[styles.botDifficulty, isActive && styles.botDifficultyActive]}>
                       {bot.label}
                     </Text>
-                    <Text style={[styles.botTagline, isActive && styles.botTaglineActive]}>
+                    <Text
+                      style={[styles.botTagline, isTinyPhone && styles.botTaglineTiny, isActive && styles.botTaglineActive]}
+                      numberOfLines={1}
+                    >
                       {bot.tagline}
                     </Text>
                   </View>
 
-                  <Text style={[styles.botDescription, isActive && styles.botDescriptionActive]}>
+                  <Text
+                    style={[styles.botDescription, isShortPhone && styles.botDescriptionShort, isActive && styles.botDescriptionActive]}
+                    numberOfLines={isShortPhone ? 2 : 3}
+                  >
                     {bot.description}
                   </Text>
                 </View>
@@ -91,7 +104,7 @@ export default function BotScreen() {
           })}
         </ScrollView>
 
-        <View style={styles.previewCard}>
+        <View style={[styles.previewCard, isShortPhone && styles.previewCardShort]}>
           <Text style={styles.previewLabel}>Selected Opponent</Text>
           <Text style={styles.previewName}>{selectedBot.name}</Text>
           <Text style={styles.previewSubtitle}>
@@ -167,6 +180,10 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'flex-start',
   },
+  botCardSmall: {
+    borderRadius: 14,
+    padding: 13,
+  },
   botCardActive: {
     backgroundColor: '#12182f',
   },
@@ -202,6 +219,11 @@ const styles = StyleSheet.create({
     color: '#12182f',
     fontSize: 19,
     fontWeight: '900',
+    flex: 1,
+    marginRight: 8,
+  },
+  botNameTiny: {
+    fontSize: 17,
   },
   botNameActive: {
     color: '#ffffff',
@@ -235,6 +257,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
     textTransform: 'uppercase',
+    flex: 1,
+  },
+  botTaglineTiny: {
+    fontSize: 11,
   },
   botTaglineActive: {
     color: '#ffd166',
@@ -244,6 +270,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     lineHeight: 20,
+  },
+  botDescriptionShort: {
+    fontSize: 13,
+    lineHeight: 18,
   },
   botDescriptionActive: {
     color: '#d8e2ff',
@@ -257,6 +287,11 @@ const styles = StyleSheet.create({
     borderColor: '#e7ebf3',
     marginTop: 12,
     marginBottom: 12,
+  },
+  previewCardShort: {
+    paddingVertical: 11,
+    marginTop: 8,
+    marginBottom: 9,
   },
   previewLabel: {
     color: '#667085',

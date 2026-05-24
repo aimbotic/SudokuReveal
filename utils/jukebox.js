@@ -22,6 +22,41 @@ export const JUKEBOX_TRACKS = [
     color: '#c3bef0',
     source: require('../assets/music/quiet-pines.wav'),
   },
+  {
+    id: 'moonlit-keys',
+    title: 'Moonlit Keys',
+    subtitle: 'Soft night tones with a gentle pulse',
+    color: '#a5b4fc',
+    source: require('../assets/music/moonlit-keys.wav'),
+  },
+  {
+    id: 'ocean-breath',
+    title: 'Ocean Breath',
+    subtitle: 'Slow swells for relaxed solving',
+    color: '#67e8f9',
+    source: require('../assets/music/ocean-breath.wav'),
+  },
+  {
+    id: 'cloud-garden',
+    title: 'Cloud Garden',
+    subtitle: 'Airy chords with quiet shimmer',
+    color: '#bbf7d0',
+    source: require('../assets/music/cloud-garden.wav'),
+  },
+  {
+    id: 'cedar-glow',
+    title: 'Cedar Glow',
+    subtitle: 'Warm low notes and forest calm',
+    color: '#fcd34d',
+    source: require('../assets/music/cedar-glow.wav'),
+  },
+  {
+    id: 'starlit-stream',
+    title: 'Starlit Stream',
+    subtitle: 'Clear flowing tones for focus',
+    color: '#f0abfc',
+    source: require('../assets/music/starlit-stream.wav'),
+  },
 ];
 
 let activeSound = null;

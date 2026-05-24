@@ -4,6 +4,8 @@ import { enqueueSyncEvent, flushSyncQueue } from './offlineSync';
 import { loadPlayerProfile } from './player';
 
 const RANKED_KEY = 'ranked_profile';
+export const RANKED_WIN_RP = 75;
+export const RANKED_LOSS_RP = 35;
 
 export const RANKS = [
   { name: 'Iron', minRating: 0, color: '#737373' },
@@ -77,7 +79,7 @@ async function saveRankedProfile(profile) {
 export async function recordRankedWin() {
   const profile = await loadRankedProfile();
   const nextProfile = {
-    rating: profile.rating + 75,
+    rating: profile.rating + RANKED_WIN_RP,
     wins: profile.wins + 1,
     losses: profile.losses,
     matches: profile.matches + 1,
@@ -88,7 +90,7 @@ export async function recordRankedWin() {
 export async function recordRankedLoss() {
   const profile = await loadRankedProfile();
   const nextProfile = {
-    rating: Math.max(0, profile.rating - 35),
+    rating: Math.max(0, profile.rating - RANKED_LOSS_RP),
     wins: profile.wins,
     losses: profile.losses + 1,
     matches: profile.matches + 1,

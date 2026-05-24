@@ -39,6 +39,10 @@ yarn-error.*
 !.env.example
 .env*.local
 
+# local Codex/agent tooling
+.agents/
+skills-lock.json
+
 # typescript
 *.tsbuildinfo
 

@@ -57,9 +57,10 @@ export default function OnlineScreen() {
   const [opponentName, setOpponentName] = useState(() => getRandomOpponent());
   const [matchmaking, setMatchmaking] = useState(null);
   const [tipIndex, setTipIndex] = useState(0);
-  const contentWidth = Math.min(width - (width <= 360 ? 18 : 24), 520);
-  const isSmallPhone = width <= 390;
-  const isTinyPhone = width <= 360;
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - (phoneWidth <= 360 ? 18 : 24), 416);
+  const isSmallPhone = phoneWidth <= 390;
+  const isTinyPhone = phoneWidth <= 360;
   const isShortPhone = height <= 760;
 
   useFocusEffect(

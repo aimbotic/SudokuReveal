@@ -32,8 +32,9 @@ export default function SettingsScreen() {
   const [pendingSyncCount, setPendingSyncCount] = useState(0);
   const [isSyncing, setIsSyncing] = useState(false);
   const { width } = useWindowDimensions();
-  const contentWidth = Math.min(width - 24, 520);
-  const isSmallPhone = width <= 390;
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - 24, 416);
+  const isSmallPhone = phoneWidth <= 390;
   const tileGap = 12;
   const tileWidth = (contentWidth - tileGap) / 2;
   const hasBackground = getBackgroundImageSource(backgroundSelection) !== undefined;

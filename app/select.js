@@ -36,8 +36,9 @@ const PUZZLE_SECTIONS = DIFFICULTY_ORDER.map((difficulty) => ({
 export default function SelectScreen() {
   const { width } = useWindowDimensions();
   const [completedIds, setCompletedIds] = useState([]);
-  const contentWidth = Math.min(width - 24, 520);
-  const isSmallPhone = width <= 390;
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - 24, 416);
+  const isSmallPhone = phoneWidth <= 390;
 
   useFocusEffect(
     useCallback(() => {

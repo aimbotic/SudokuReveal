@@ -19,6 +19,7 @@ import { getLevelNumber, getNextPuzzleAfter } from '../utils/progression';
 export default function CompletionScreen() {
   const { id } = useLocalSearchParams();
   const { width } = useWindowDimensions();
+  const phoneWidth = Math.min(width, 440);
   const puzzle = puzzlesData.find((p) => p.id === id);
   const nextPuzzle = typeof id === 'string' ? getNextPuzzleAfter(id) : null;
 
@@ -45,7 +46,7 @@ export default function CompletionScreen() {
     return <Redirect href="/select" />;
   }
 
-  const displayImageSize = Math.min(width - 32, 420);
+  const displayImageSize = Math.min(phoneWidth - 32, 408);
   const tileSize = displayImageSize / 3;
 
   return (

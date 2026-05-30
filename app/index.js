@@ -44,7 +44,8 @@ export default function HomeScreen() {
   const isTinyPhone = width <= 360;
   const isShortPhone = height <= 780;
   const isVeryShortPhone = height <= 700;
-  const contentWidth = Math.min(width - (isCompactPhone ? 24 : 40), 460);
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - (isCompactPhone ? 24 : 40), 416);
 
   useFocusEffect(
     useCallback(() => {

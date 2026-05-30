@@ -3,6 +3,7 @@ import {
   View,
   Text,
   StyleSheet,
+  Pressable,
   TouchableOpacity,
   ImageBackground,
   useWindowDimensions,
@@ -490,9 +491,10 @@ export default function PuzzleScreen() {
   const botFillCount                    =
     botBoard && puzzle ? getCorrectFillCount(botBoard, puzzle) : 0;
   const { width, height } = useWindowDimensions();
-  const isCompactPhone                = width <= 430;
-  const isTightPhone                  = width <= 390;
-  const isTinyPhone                   = width <= 360;
+  const phoneWidth                    = Math.min(width, 440);
+  const isCompactPhone                = phoneWidth <= 430;
+  const isTightPhone                  = phoneWidth <= 390;
+  const isTinyPhone                   = phoneWidth <= 360;
   const isShortPhone                  = height <= 820;
   const isVeryShortPhone              = height <= 700;
   const verticalChromeEstimate        =
@@ -501,14 +503,14 @@ export default function PuzzleScreen() {
       : (isVeryShortPhone ? 226 : isShortPhone ? 250 : 284);
   const singleGridSize                = Math.max(
     isTinyPhone ? 292 : 318,
-    Math.min(width - (isCompactPhone ? 20 : 32), height - verticalChromeEstimate, 520)
+    Math.min(phoneWidth - (isCompactPhone ? 20 : 32), height - verticalChromeEstimate, 408)
   );
   const battleGridSize                = Math.max(
     isTinyPhone ? 138 : isTightPhone ? 148 : 160,
     Math.min(
-      (width - (isCompactPhone ? 30 : 44)) / 2,
+      (phoneWidth - (isCompactPhone ? 30 : 44)) / 2,
       height * (isVeryShortPhone ? 0.2 : 0.235),
-      isCompactPhone ? 184 : 250
+      isCompactPhone ? 184 : 198
     )
   );
 
@@ -2512,6 +2514,106 @@ function SudokuCell({
 
 // ─── Number Pad ──────────────────────────────────────────────────
 
+function NumberPadButton({
+  number,
+  isDarkMode,
+  isCompactPhone,
+  isShortPhone,
+  onNumberPress,
+}) {
+  const popAnim = useRef(new Animated.Value(0)).current;
+  const flashTimer = useRef(null);
+  const [isFlashing, setIsFlashing] = useState(false);
+
+  useEffect(() => (
+    () => {
+      if (flashTimer.current) {
+        clearTimeout(flashTimer.current);
+      }
+    }
+  ), []);
+
+  function triggerFlash() {
+    popAnim.stopAnimation();
+    popAnim.setValue(0);
+    if (flashTimer.current) {
+      clearTimeout(flashTimer.current);
+    }
+    setIsFlashing(true);
+    flashTimer.current = setTimeout(() => setIsFlashing(false), 230);
+    Animated.sequence([
+      Animated.timing(popAnim, {
+        toValue: 1,
+        duration: 105,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: false,
+      }),
+      Animated.delay(75),
+      Animated.spring(popAnim, {
+        toValue: 0,
+        friction: 4,
+        tension: 130,
+        useNativeDriver: false,
+      }),
+    ]).start();
+  }
+
+  const animatedStyle = {
+    shadowColor: popAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: ['#000000', '#16f26e'],
+    }),
+    shadowOpacity: popAnim.interpolate({
+      inputRange: [0, 1],
+      outputRange: [0.05, 0.55],
+    }),
+    transform: [
+      {
+        scale: popAnim.interpolate({
+          inputRange: [0, 1],
+          outputRange: [1, 1.24],
+        }),
+      },
+    ],
+  };
+
+  return (
+    <Pressable
+      onPressIn={triggerFlash}
+      onPress={() => onNumberPress(number)}
+      accessibilityRole="button"
+      accessibilityLabel={`Enter ${number}`}
+      style={styles.padButtonTouch}
+    >
+      <Animated.View
+        pointerEvents="none"
+        style={[
+          styles.padButton,
+          isDarkMode && styles.controlDark,
+          isCompactPhone && styles.padButtonCompact,
+          isShortPhone && styles.padButtonShort,
+          animatedStyle,
+          isFlashing && {
+            backgroundColor: '#16f26e',
+            borderColor: '#bbf7d0',
+          },
+        ]}
+      >
+        <Text
+          style={[
+            styles.padButtonText,
+            isDarkMode && styles.headingDark,
+            isCompactPhone && styles.padButtonTextCompact,
+            isShortPhone && styles.padButtonTextShort,
+          ]}
+        >
+          {number}
+        </Text>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
 function NumberPad({
   isNoteMode,
   isNoteFeatureEnabled,
@@ -2520,6 +2622,12 @@ function NumberPad({
   isShortPhone,
   onNumberPress,
 }) {
+  const numberRows = [
+    [1, 2, 3],
+    [4, 5, 6],
+    [7, 8, 9],
+  ];
+
   return (
     <View
       style={[
@@ -2540,36 +2648,26 @@ function NumberPad({
         </Text>
       )}
   
-      <View
-        style={[
-          styles.padRow,
-          isCompactPhone && styles.padRowCompact,
-          isShortPhone && styles.padRowShort,
-        ]}
-      >
-        {[1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => (
-          <TouchableOpacity
-            key={n}
+      <View style={[styles.padGrid, isCompactPhone && styles.padGridCompact]}>
+        {numberRows.map((row) => (
+          <View
+            key={row.join('-')}
             style={[
-                styles.padButton,
-                isDarkMode && styles.controlDark,
-                isCompactPhone && styles.padButtonCompact,
-                isShortPhone && styles.padButtonShort,
+              styles.padGridRow,
+              isShortPhone && styles.padGridRowShort,
             ]}
-            onPress={() => onNumberPress(n)}
-            activeOpacity={0.7}
           >
-            <Text
-              style={[
-                  styles.padButtonText,
-                  isDarkMode && styles.headingDark,
-                  isCompactPhone && styles.padButtonTextCompact,
-                  isShortPhone && styles.padButtonTextShort,
-              ]}
-            >
-              {n}
-            </Text>
-          </TouchableOpacity>
+            {row.map((n) => (
+              <NumberPadButton
+                key={n}
+                number={n}
+                isDarkMode={isDarkMode}
+                isCompactPhone={isCompactPhone}
+                isShortPhone={isShortPhone}
+                onNumberPress={onNumberPress}
+              />
+            ))}
+          </View>
         ))}
       </View>
 
@@ -3188,6 +3286,24 @@ const styles = StyleSheet.create({
   padModeTextShort: {
     marginBottom: 4,
   },
+  padGrid: {
+    width: '100%',
+    maxWidth: 430,
+    marginBottom: 12,
+  },
+  padGridCompact: {
+    maxWidth: 390,
+    marginBottom: 10,
+  },
+  padGridRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    width: '100%',
+    marginBottom: 8,
+  },
+  padGridRowShort: {
+    marginBottom: 6,
+  },
   padRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -3200,11 +3316,17 @@ const styles = StyleSheet.create({
   padRowShort: {
     marginBottom: 8,
   },
-  padButton: {
+  padButtonTouch: {
     flex: 1,
     marginHorizontal: 2,
+    overflow: 'visible',
+  },
+  padButton: {
+    width: '100%',
     paddingVertical: 13,
     backgroundColor: '#111827',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0)',
     borderRadius: 9,
     alignItems: 'center',
     elevation: 2,

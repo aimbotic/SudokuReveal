@@ -22,9 +22,10 @@ export default function BotScreen() {
   const [selectedBotId, setSelectedBotId] = useState(BOT_ROSTER[0].id);
   const selectedBot = BOT_ROSTER.find((bot) => bot.id === selectedBotId) ?? BOT_ROSTER[0];
   const selectedPuzzle = getPuzzleForBot(selectedBot);
-  const contentWidth = Math.min(width - 24, 520);
-  const isSmallPhone = width <= 390;
-  const isTinyPhone = width <= 360;
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - 24, 416);
+  const isSmallPhone = phoneWidth <= 390;
+  const isTinyPhone = phoneWidth <= 360;
   const isShortPhone = height <= 760;
 
   function startBattle() {

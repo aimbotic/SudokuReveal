@@ -41,6 +41,7 @@ yarn-error.*
 
 # local Codex/agent tooling
 .agents/
+.tools/
 skills-lock.json
 
 # typescript

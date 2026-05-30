@@ -21,8 +21,9 @@ import {
 export default function JukeboxScreen() {
   const { width, height } = useWindowDimensions();
   const [playerState, setPlayerState] = useState(getJukeboxState());
-  const contentWidth = Math.min(width - 24, 500);
-  const isSmallPhone = width <= 390;
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - 24, 416);
+  const isSmallPhone = phoneWidth <= 390;
   const isShortPhone = height <= 760;
 
   useEffect(() => subscribeToJukebox(setPlayerState), []);

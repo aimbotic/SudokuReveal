@@ -47,7 +47,8 @@ export default function GalleryScreen() {
   const [completedIds, setCompletedIds] = useState([]);
   const [fullscreenItem, setFullscreen] = useState(null);
   const { width }                       = useWindowDimensions();
-  const contentWidth = Math.min(width - 24, 520);
+  const phoneWidth = Math.min(width, 440);
+  const contentWidth = Math.min(phoneWidth - 24, 416);
 
   // Two columns with a gap between them
   const gap      = 10;

@@ -36,7 +36,8 @@
       "baseUrl": "/SudokuReveal"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      "expo-audio"
     ],
     "extra": {
       "router": {},

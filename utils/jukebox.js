@@ -1,4 +1,4 @@
-import { Audio } from 'expo-av';
+import { createAudioPlayer, setAudioModeAsync } from 'expo-audio';
 
 export const JUKEBOX_TRACKS = [
   {
@@ -59,7 +59,7 @@ export const JUKEBOX_TRACKS = [
   },
 ];
 
-let activeSound = null;
+let activePlayer = null;
 let currentTrackId = null;
 let isPlaying = false;
 let isLoading = false;
@@ -75,28 +75,20 @@ function findTrack(trackId) {
 }
 
 async function configureAudio() {
-  await Audio.setAudioModeAsync({
-    playsInSilentModeIOS: true,
-    staysActiveInBackground: false,
-    shouldDuckAndroid: true,
+  await setAudioModeAsync({
+    playsInSilentMode: true,
+    shouldPlayInBackground: false,
+    interruptionMode: 'duckOthers',
   });
 }
 
-async function unloadCurrentSound() {
-  if (!activeSound) return;
+function unloadCurrentPlayer() {
+  if (!activePlayer) return;
 
-  const sound = activeSound;
-  activeSound = null;
-  await sound.unloadAsync();
-}
-
-function handlePlaybackStatus(status) {
-  if (!status.isLoaded) {
-    return;
-  }
-
-  isPlaying = status.isPlaying;
-  emit();
+  const player = activePlayer;
+  activePlayer = null;
+  player.pause();
+  player.remove();
 }
 
 export function getJukeboxState() {
@@ -126,24 +118,22 @@ export async function playJukeboxTrack(trackId) {
   try {
     await configureAudio();
 
-    if (currentTrackId === trackId && activeSound) {
-      await activeSound.playAsync();
+    if (currentTrackId === trackId && activePlayer) {
+      activePlayer.play();
       isPlaying = true;
       return;
     }
 
-    await unloadCurrentSound();
+    unloadCurrentPlayer();
 
-    const { sound } = await Audio.Sound.createAsync(track.source, {
-      shouldPlay: true,
-      isLooping: true,
-      volume: 0.68,
-    });
+    const player = createAudioPlayer(track.source);
+    player.loop = true;
+    player.volume = 0.68;
+    player.play();
 
-    activeSound = sound;
+    activePlayer = player;
     currentTrackId = trackId;
     isPlaying = true;
-    sound.setOnPlaybackStatusUpdate(handlePlaybackStatus);
   } finally {
     isLoading = false;
     emit();
@@ -151,14 +141,14 @@ export async function playJukeboxTrack(trackId) {
 }
 
 export async function pauseJukebox() {
-  if (!activeSound) return;
-  await activeSound.pauseAsync();
+  if (!activePlayer) return;
+  activePlayer.pause();
   isPlaying = false;
   emit();
 }
 
 export async function stopJukebox() {
-  await unloadCurrentSound();
+  unloadCurrentPlayer();
   currentTrackId = null;
   isPlaying = false;
   emit();

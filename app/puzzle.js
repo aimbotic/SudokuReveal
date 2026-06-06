@@ -35,6 +35,7 @@ import {
   recordRankedLoss,
   recordRankedWin,
 } from '../utils/ranked';
+import { playNativePuzzleEffect } from '../utils/puzzleSfx';
 
 const SETTINGS_KEY = 'puzzle_feature_settings';
 const MAX_MISTAKES = 3;
@@ -304,6 +305,10 @@ function playChord(frequencies, duration = 0.18, delay = 0, gainValue = 0.04) {
 
 function playComboSound(comboCount) {
   const streak = Math.max(1, Math.min(comboCount, ULTIMATE_COMBO_TARGET));
+  if (playNativePuzzleEffect(`combo-${streak}`)) {
+    return;
+  }
+
   const climb = Math.pow(1.155, streak - 1);
   const base = Math.min(1760, 330 * climb);
   const sparkleDelay = 0.035 + Math.min(0.055, streak * 0.003);
@@ -319,6 +324,10 @@ function playComboSound(comboCount) {
 }
 
 function playComboBreakSound() {
+  if (playNativePuzzleEffect('combo-break')) {
+    return;
+  }
+
   const played = [
     playTone(210, 0.18, 0, { type: 'sawtooth', gainValue: 0.07 }),
     playTone(155, 0.2, 0.06, { type: 'sawtooth', gainValue: 0.06 }),
@@ -331,6 +340,10 @@ function playComboBreakSound() {
 }
 
 function playLineClearSound() {
+  if (playNativePuzzleEffect('line-clear')) {
+    return;
+  }
+
   const notes = [523, 659, 784, 988, 1175, 1568, 1976];
   const played = notes
     .map((frequency, index) => playLayeredTone(frequency, 0.14, index * 0.043, 0.038))
@@ -345,6 +358,10 @@ function playLineClearSound() {
 }
 
 function playBoxCompleteSound() {
+  if (playNativePuzzleEffect('box-complete')) {
+    return;
+  }
+
   const notes = [440, 554, 659, 880, 1108, 1318];
   const played = notes
     .map((frequency, index) => playLayeredTone(frequency, 0.115, index * 0.045, 0.038))
@@ -359,6 +376,10 @@ function playBoxCompleteSound() {
 }
 
 function playMegaBonusSound() {
+  if (playNativePuzzleEffect('mega-bonus', 0.9)) {
+    return;
+  }
+
   const notes = [
     523, 659, 784, 1046, 1318,
     784, 1046, 1318, 1568, 2093,
@@ -381,6 +402,10 @@ function playMegaBonusSound() {
 }
 
 function playUltimateComboSound() {
+  if (playNativePuzzleEffect('ultimate-combo', 0.94)) {
+    return;
+  }
+
   const notes = [
     392, 523, 659, 784, 988, 1175,
     659, 784, 988, 1175, 1568, 1976,

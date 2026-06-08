@@ -36,6 +36,15 @@ import {
   recordRankedWin,
 } from '../utils/ranked';
 import { playNativePuzzleEffect } from '../utils/puzzleSfx';
+import {
+  completeOnlineRoom,
+  failOnlineAttempt,
+  loadOnlineRoom,
+  recordOnlineMove,
+  startOnlineRoom,
+  subscribeToOnlineRoom,
+} from '../utils/onlineGameplay';
+import { loadPlayerProfile } from '../utils/player';
 
 const SETTINGS_KEY = 'puzzle_feature_settings';
 const MAX_MISTAKES = 3;
@@ -449,7 +458,7 @@ async function saveFeatureSettings(settings) {
 // ─── Main Screen ─────────────────────────────────────────────────
 
 export default function PuzzleScreen() {
-  const { id, mode, room, bot, opponent } = useLocalSearchParams();
+  const { id, mode, room, bot, opponent, onlineRoomId } = useLocalSearchParams();
   const puzzle = puzzlesData.find((p) => p.id === id);
   const isRankedMode = mode === 'ranked';
   const isOnlineRace = mode === 'race' || isRankedMode;
@@ -457,6 +466,7 @@ export default function PuzzleScreen() {
   const botProfile = getBotById(bot);
   const isProgressMode = !isOnlineRace && !isBotBattle;
   const roomCode = typeof room === 'string' ? room : 'QUICK';
+  const onlineRoomIdValue = typeof onlineRoomId === 'string' ? onlineRoomId : null;
   const opponentName = typeof opponent === 'string' ? opponent : 'Opponent';
 
   // All null until we load from storage —
@@ -485,6 +495,8 @@ export default function PuzzleScreen() {
   const [botResult, setBotResult]       = useState(null);
   const [botTurnToken, setBotTurnToken] = useState(0);
   const [featureSettings, setFeatureSettings] = useState(DEFAULT_FEATURE_SETTINGS);
+  const [playerProfile, setPlayerProfile] = useState(null);
+  const [onlineRoomState, setOnlineRoomState] = useState(null);
   const [backgroundSelection, setBackgroundSelection] = useState(null);
   const [isSolved, setIsSolved]         = useState(false);
   const [isFailed, setIsFailed]         = useState(false);
@@ -499,6 +511,7 @@ export default function PuzzleScreen() {
   const [isUltimateParty, setIsUltimateParty] = useState(false);
   const timerRef                        = useRef(null);
   const botMoveTimerRef                 = useRef(null);
+  const onlineCountdownStartedRef       = useRef(false);
   const comboAnim                       = useRef(new Animated.Value(0)).current;
   const comboBreakAnim                  = useRef(new Animated.Value(0)).current;
   const correctCellAnim                 = useRef(new Animated.Value(0)).current;
@@ -515,6 +528,54 @@ export default function PuzzleScreen() {
     board && puzzle ? getCorrectFillCount(board, puzzle) : 0;
   const botFillCount                    =
     botBoard && puzzle ? getCorrectFillCount(botBoard, puzzle) : 0;
+  const onlinePlayerCount               = onlineRoomState?.players?.length ?? 0;
+  const onlineMoveCount                 = onlineRoomState?.moves?.length ?? 0;
+  const onlinePlayers                   = onlineRoomState?.players ?? [];
+  const onlineActivePlayers             = onlinePlayers.filter(
+    (onlinePlayer) =>
+      onlinePlayer.status !== 'left' &&
+      onlinePlayer.status !== 'disconnected'
+  );
+  const onlineActivePlayerCount         = onlineActivePlayers.length;
+  const onlineExpectedPlayerCount       = onlineRoomState?.room?.max_players ?? 2;
+  const onlineSelfPlayer                =
+    playerProfile?.id
+      ? onlinePlayers.find((onlinePlayer) => onlinePlayer.player_id === playerProfile.id)
+      : null;
+  const onlineOpponentPlayer            =
+    playerProfile?.id
+      ? onlinePlayers.find(
+          (onlinePlayer) =>
+            onlinePlayer.player_id !== playerProfile.id &&
+            onlinePlayer.status !== 'left' &&
+            onlinePlayer.status !== 'disconnected'
+        )
+      : null;
+  const onlineSelfCells                 = onlineSelfPlayer?.completed_cells ?? playerFillCount;
+  const onlineOpponentCells             = onlineOpponentPlayer?.completed_cells ?? 0;
+  const onlineOpponentDisplayName       = onlineOpponentPlayer?.display_name ?? opponentName;
+  const onlineRoomStatus                = onlineRoomState?.room?.status ?? 'waiting';
+  const isWaitingForOnlineStart         =
+    isOnlineRace &&
+    Boolean(onlineRoomIdValue) &&
+    onlineRoomStatus !== 'playing' &&
+    onlineRoomStatus !== 'completed';
+  const isWaitingForOnlineOpponent      =
+    isWaitingForOnlineStart &&
+    onlineActivePlayerCount < onlineExpectedPlayerCount;
+  const onlineRaceStatusText            =
+    isWaitingForOnlineOpponent
+      ? `Waiting for player ${onlineActivePlayerCount}/${onlineExpectedPlayerCount}`
+      : isWaitingForOnlineStart
+        ? 'Syncing room start'
+        : `${onlineRoomStatus} • ${onlineMoveCount} moves`;
+  const onlineWinnerId                  = onlineRoomState?.room?.winner_player_id ?? null;
+  const onlineWinnerName                =
+    onlineWinnerId && onlineWinnerId === playerProfile?.id
+      ? 'You won'
+      : onlineWinnerId
+        ? `${onlineOpponentDisplayName} won`
+        : null;
   const { width, height } = useWindowDimensions();
   const phoneWidth                    = Math.min(width, 440);
   const isCompactPhone                = phoneWidth <= 430;
@@ -592,7 +653,8 @@ export default function PuzzleScreen() {
     setIsPaused(false);
     setIsSolved(false);
     setIsFailed(false);
-    setPregameCountdown(isOnlineRace ? 3 : null);
+    onlineCountdownStartedRef.current = false;
+    setPregameCountdown(isOnlineRace && !onlineRoomIdValue ? 3 : null);
     setBotResult(null);
     setIsBotThinking(false);
     setBotTurnToken(0);
@@ -610,6 +672,12 @@ export default function PuzzleScreen() {
     async function restore() {
       const saved = isProgressMode ? await loadBoardState(puzzle.id) : null;
       const settings = await loadFeatureSettings();
+      if (isOnlineRace) {
+        setPlayerProfile(await loadPlayerProfile());
+      } else {
+        setPlayerProfile(null);
+        setOnlineRoomState(null);
+      }
       setFeatureSettings(settings);
       if (!settings.notes) {
         setIsNoteMode(false);
@@ -646,12 +714,19 @@ export default function PuzzleScreen() {
 
   // ── Start timer after load ────────────────────────────────────
   useEffect(() => {
-    if (!isLoaded || isPaused || isSolved || isFailed || pregameCountdown !== null) return;
+    if (
+      !isLoaded ||
+      isPaused ||
+      isSolved ||
+      isFailed ||
+      pregameCountdown !== null ||
+      isWaitingForOnlineStart
+    ) return;
     timerRef.current = setInterval(() => {
       setSeconds((s) => s + 1);
     }, 1000);
     return () => clearInterval(timerRef.current);
-  }, [isLoaded, isPaused, isSolved, isFailed, pregameCountdown]);
+  }, [isLoaded, isPaused, isSolved, isFailed, pregameCountdown, isWaitingForOnlineStart]);
 
   useEffect(() => {
     if (!isLoaded || pregameCountdown === null) return undefined;
@@ -667,6 +742,21 @@ export default function PuzzleScreen() {
     return () => clearTimeout(countdownTimer);
   }, [isLoaded, pregameCountdown]);
 
+  useEffect(() => {
+    if (
+      !isLoaded ||
+      !isOnlineRace ||
+      !onlineRoomIdValue ||
+      isSolved ||
+      isFailed ||
+      onlineRoomStatus !== 'playing' ||
+      onlineCountdownStartedRef.current
+    ) return;
+
+    onlineCountdownStartedRef.current = true;
+    setPregameCountdown(3);
+  }, [isLoaded, isOnlineRace, onlineRoomIdValue, isSolved, isFailed, onlineRoomStatus]);
+
   // ── Stop timer on solve ───────────────────────────────────────
   useEffect(() => {
     if (isSolved || isFailed) clearInterval(timerRef.current);
@@ -674,12 +764,82 @@ export default function PuzzleScreen() {
 
   useEffect(() => () => clearTimeout(botMoveTimerRef.current), []);
 
+  useEffect(() => {
+    if (!isLoaded || !isOnlineRace || !onlineRoomIdValue) return undefined;
+
+    let isActive = true;
+
+    async function refreshOnlineRoom() {
+      try {
+        const nextRoomState = await loadOnlineRoom(onlineRoomIdValue);
+        if (isActive) {
+          setOnlineRoomState(nextRoomState);
+        }
+      } catch (error) {
+        console.error('Failed to load online room:', error);
+      }
+    }
+
+    refreshOnlineRoom();
+    const pollTimer = setInterval(refreshOnlineRoom, 2500);
+    const unsubscribe = subscribeToOnlineRoom(onlineRoomIdValue, {
+      onRoomChange: refreshOnlineRoom,
+      onPlayersChange: refreshOnlineRoom,
+      onMove: refreshOnlineRoom,
+      onEvent: refreshOnlineRoom,
+      onStatusChange: (status) => {
+        if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
+          refreshOnlineRoom();
+        }
+      },
+    });
+
+    return () => {
+      isActive = false;
+      clearInterval(pollTimer);
+      unsubscribe();
+    };
+  }, [isLoaded, isOnlineRace, onlineRoomIdValue]);
+
+  useEffect(() => {
+    if (
+      !isLoaded ||
+      !isOnlineRace ||
+      !onlineRoomIdValue ||
+      !playerProfile?.id ||
+      onlineActivePlayerCount < onlineExpectedPlayerCount ||
+      !['waiting', 'ready'].includes(onlineRoomStatus)
+    ) return;
+
+    async function markRoomStarted() {
+      try {
+        await startOnlineRoom({
+          roomId: onlineRoomIdValue,
+          playerId: playerProfile.id,
+        });
+      } catch (error) {
+        console.error('Failed to mark online room started:', error);
+      }
+    }
+
+    markRoomStarted();
+  }, [
+    isLoaded,
+    isOnlineRace,
+    onlineRoomIdValue,
+    playerProfile?.id,
+    onlineActivePlayerCount,
+    onlineExpectedPlayerCount,
+    onlineRoomStatus,
+  ]);
+
   // ── Cell selection ────────────────────────────────────────────
   if (!puzzle) {
     return <Redirect href="/select" />;
   }
 
   function handleCellPress(row, col) {
+    if (isWaitingForOnlineStart) return;
     if (pregameCountdown !== null) return;
     if (isBotThinking) return;
     setSelectedCell({ row, col });
@@ -862,6 +1022,69 @@ export default function PuzzleScreen() {
     ]).start(() => setCellFeedback(null));
   }
 
+  async function recordOnlineMoveSafely({
+    row,
+    col,
+    value,
+    isCorrect,
+    elapsedMs,
+    currentScore,
+    completedCells,
+    currentMistakes,
+  }) {
+    if (!isOnlineRace || !onlineRoomIdValue || !playerProfile?.id) return;
+
+    try {
+      await recordOnlineMove({
+        roomId: onlineRoomIdValue,
+        playerId: playerProfile.id,
+        rowIndex: row,
+        colIndex: col,
+        value,
+        isCorrect,
+        elapsedMs,
+        clientMoveId: `${playerProfile.id}-${Date.now()}-${row}-${col}-${value}`,
+        score: currentScore,
+        completedCells,
+        mistakes: currentMistakes,
+      });
+    } catch (error) {
+      console.error('Failed to record online move:', error);
+    }
+  }
+
+  async function completeOnlineRoomSafely({ finalScore, finalMistakes, finalBoard }) {
+    if (!isOnlineRace || !onlineRoomIdValue || !playerProfile?.id) return;
+
+    try {
+      await completeOnlineRoom({
+        roomId: onlineRoomIdValue,
+        playerId: playerProfile.id,
+        score: finalScore,
+        completedCells: getCorrectFillCount(finalBoard, puzzle),
+        mistakes: finalMistakes,
+      });
+    } catch (error) {
+      console.error('Failed to complete online room:', error);
+    }
+  }
+
+  async function failOnlineAttemptSafely({ finalScore, finalMistakes, finalBoard }) {
+    if (!isOnlineRace || !onlineRoomIdValue || !playerProfile?.id) return;
+
+    try {
+      await failOnlineAttempt({
+        roomId: onlineRoomIdValue,
+        playerId: playerProfile.id,
+        score: finalScore,
+        completedCells: getCorrectFillCount(finalBoard, puzzle),
+        mistakes: finalMistakes,
+      });
+    } catch (error) {
+      console.error('Failed to record online failure:', error);
+    }
+  }
+
   async function handleFeatureToggle(feature, value) {
     const nextSettings = { ...featureSettings, [feature]: value };
     setFeatureSettings(nextSettings);
@@ -913,7 +1136,8 @@ export default function PuzzleScreen() {
     setIsNoteMode(false);
     setIsPaused(false);
     setIsFailed(false);
-    setPregameCountdown(isOnlineRace ? 3 : null);
+    onlineCountdownStartedRef.current = false;
+    setPregameCountdown(isOnlineRace && !onlineRoomIdValue ? 3 : null);
     setBotResult(null);
     setIsBotThinking(false);
     setBotTurnToken(0);
@@ -1009,6 +1233,7 @@ export default function PuzzleScreen() {
   }
 
   async function handleHintPress() {
+    if (isWaitingForOnlineStart) return;
     if (pregameCountdown !== null) return;
     if (!featureSettings.hints) return;
     if (!getHintCell()) return;
@@ -1026,6 +1251,7 @@ export default function PuzzleScreen() {
   }
 
   async function handleNumberPress(number) {
+    if (isWaitingForOnlineStart) return;
     if (pregameCountdown !== null) return;
     if (isBotThinking || botResult !== null) return;
     if (selectedCell === null) return;
@@ -1187,6 +1413,21 @@ export default function PuzzleScreen() {
       if (isRankedMode) {
         await recordRankedLoss();
       }
+      await recordOnlineMoveSafely({
+        row,
+        col,
+        value: number,
+        isCorrect: false,
+        elapsedMs: seconds * 1000,
+        currentScore: newScore,
+        completedCells: getCorrectFillCount(newBoard, puzzle),
+        currentMistakes: newMistakes,
+      });
+      await failOnlineAttemptSafely({
+        finalScore: newScore,
+        finalMistakes: newMistakes,
+        finalBoard: newBoard,
+      });
       setIsFailed(true);
       return;
     }
@@ -1207,6 +1448,19 @@ export default function PuzzleScreen() {
       });
     }
 
+    if (isOnlineRace && isAnswerEntry && number !== 0) {
+      await recordOnlineMoveSafely({
+        row,
+        col,
+        value: number,
+        isCorrect: isCorrectAnswer,
+        elapsedMs: seconds * 1000,
+        currentScore: newScore,
+        completedCells: getCorrectFillCount(newBoard, puzzle),
+        currentMistakes: newMistakes,
+      });
+    }
+
     if (isBoardSolved(newBoard, puzzle.solution)) {
       if (isProgressMode) {
         await markPuzzleCompleted(puzzle.id, { seconds, score });
@@ -1215,6 +1469,11 @@ export default function PuzzleScreen() {
       if (isRankedMode) {
         await recordRankedWin();
       }
+      await completeOnlineRoomSafely({
+        finalScore: newScore,
+        finalMistakes: newMistakes,
+        finalBoard: newBoard,
+      });
       if (isBotBattle) {
         setBotResult('player');
       }
@@ -1224,6 +1483,8 @@ export default function PuzzleScreen() {
 
   // ── Undo ──────────────────────────────────────────────────────
   async function handleUndo() {
+    if (isWaitingForOnlineStart) return;
+    if (pregameCountdown !== null) return;
     if (!featureSettings.undo) return;
     if (undoStack.length === 0) return;
 
@@ -1283,9 +1544,18 @@ export default function PuzzleScreen() {
             <Text style={[styles.raceBannerTitle, isCompactPhone && styles.raceBannerTitleCompact]}>
               {isRankedMode ? 'Ranked Match' : `Race Room ${roomCode}`}
             </Text>
-            <Text style={styles.raceBannerText}>
-              {isRankedMode ? `Beat ${opponentName} for +${RANKED_WIN_RP} RP` : 'First full board wins'}
-            </Text>
+            <View style={styles.raceBannerDetails}>
+              <Text style={styles.raceBannerText} numberOfLines={1}>
+                {onlineWinnerName
+                  ? onlineWinnerName
+                  : isRankedMode
+                    ? `You ${onlineSelfCells}/81 • ${onlineOpponentDisplayName} ${onlineOpponentCells}/81 • +${RANKED_WIN_RP} RP`
+                    : `${onlinePlayerCount || 1}/2 players • You ${onlineSelfCells}/81 • ${onlineOpponentDisplayName} ${onlineOpponentCells}/81`}
+              </Text>
+              <Text style={styles.raceBannerMeta} numberOfLines={1}>
+                {onlineRaceStatusText}
+              </Text>
+            </View>
           </View>
         )}
         {isBotBattle && (
@@ -1613,6 +1883,14 @@ export default function PuzzleScreen() {
       />
 
       <RacePrivacyShield visible={isOnlineRace && isRaceShielded && !isSolved && !isFailed} />
+
+      <OnlineWaitingOverlay
+        visible={isWaitingForOnlineStart && isLoaded && !isSolved && !isFailed}
+        isRankedMode={isRankedMode}
+        activePlayers={onlineActivePlayerCount}
+        expectedPlayers={onlineExpectedPlayerCount}
+        roomCode={roomCode}
+      />
 
       <CountdownOverlay
         visible={pregameCountdown !== null && isLoaded && !isSolved && !isFailed}
@@ -2302,6 +2580,25 @@ function RacePrivacyShield({ visible }) {
   );
 }
 
+function OnlineWaitingOverlay({ visible, isRankedMode, activePlayers, expectedPlayers, roomCode }) {
+  if (!visible) return null;
+
+  return (
+    <View pointerEvents="auto" style={styles.onlineWaitingOverlay}>
+      <Text style={styles.onlineWaitingKicker}>
+        {isRankedMode ? 'Ranked Queue' : `Room ${roomCode}`}
+      </Text>
+      <Text style={styles.onlineWaitingTitle}>Waiting for opponent</Text>
+      <Text style={styles.onlineWaitingCount}>
+        {activePlayers}/{expectedPlayers} players connected
+      </Text>
+      <Text style={styles.onlineWaitingText}>
+        The race starts automatically when the room is full.
+      </Text>
+    </View>
+  );
+}
+
 function CountdownOverlay({ visible, count, isRankedMode, opponentName }) {
   if (!visible) return null;
 
@@ -2786,10 +3083,23 @@ const styles = StyleSheet.create({
   raceBannerTitleCompact: {
     fontSize: 12,
   },
+  raceBannerDetails: {
+    flex: 1,
+    alignItems: 'flex-end',
+    marginLeft: 10,
+    minWidth: 0,
+  },
   raceBannerText: {
     color: '#ffffff',
     fontSize: 12,
     fontWeight: '800',
+  },
+  raceBannerMeta: {
+    color: '#7ddfc9',
+    fontSize: 10,
+    fontWeight: '800',
+    marginTop: 2,
+    textTransform: 'uppercase',
   },
   headerInfo: {
     maxWidth: '38%',
@@ -3449,6 +3759,48 @@ const styles = StyleSheet.create({
     fontSize: 40,
     fontWeight: '900',
     marginBottom: 12,
+  },
+  onlineWaitingOverlay: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    bottom: 0,
+    left: 0,
+    zIndex: 118,
+    backgroundColor: 'rgba(5,8,22,0.94)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 28,
+  },
+  onlineWaitingKicker: {
+    color: '#06d6a0',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    marginBottom: 14,
+    textAlign: 'center',
+  },
+  onlineWaitingTitle: {
+    color: '#ffffff',
+    fontSize: 31,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 10,
+  },
+  onlineWaitingCount: {
+    color: '#f8c537',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  onlineWaitingText: {
+    color: '#c8d0f5',
+    fontSize: 15,
+    fontWeight: '800',
+    textAlign: 'center',
+    lineHeight: 22,
+    maxWidth: 280,
   },
   countdownOverlay: {
     position: 'absolute',

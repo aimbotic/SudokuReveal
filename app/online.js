@@ -4,6 +4,7 @@ import {
   ScrollView,
   View,
   Text,
+  TextInput,
   TouchableOpacity,
   StyleSheet,
   useWindowDimensions,
@@ -11,6 +12,13 @@ import {
 import { router, useFocusEffect } from 'expo-router';
 
 import puzzlesData from '../assets/puzzles.json';
+import {
+  createOnlineRoom,
+  findOrCreateRankedRoom,
+  isOnlineGameplayConfigured,
+  joinOnlineRoom,
+} from '../utils/onlineGameplay';
+import { loadPlayerProfile } from '../utils/player';
 import {
   RANKS,
   getNextRankForRating,
@@ -21,7 +29,6 @@ import {
 } from '../utils/ranked';
 
 const DIFFICULTIES = ['easy', 'medium', 'hard', 'insane'];
-const OPPONENT_NAMES = ['Nova', 'Cipher', 'Atlas', 'Echo', 'Violet', 'Dash', 'Rune', 'Orbit'];
 const MATCHMAKING_TIPS = [
   'Scan rows and columns before guessing.',
   'Use notes early so hard boards stay readable.',
@@ -34,28 +41,16 @@ function getPuzzleForDifficulty(difficulty) {
   return puzzlesData.find((puzzle) => puzzle.difficulty === difficulty) ?? puzzlesData[0];
 }
 
-function createRoomCode(difficulty) {
-  const prefix = difficulty.slice(0, 2).toUpperCase();
-  const number = Math.floor(1000 + Math.random() * 9000);
-  return `${prefix}-${number}`;
-}
-
-function createRankedRoom(rankName) {
-  const number = Math.floor(1000 + Math.random() * 9000);
-  return `${rankName.slice(0, 3).toUpperCase()}-${number}`;
-}
-
-function getRandomOpponent() {
-  return OPPONENT_NAMES[Math.floor(Math.random() * OPPONENT_NAMES.length)];
-}
-
 export default function OnlineScreen() {
   const { width, height } = useWindowDimensions();
   const [difficulty, setDifficulty] = useState('medium');
-  const [roomCode, setRoomCode] = useState(() => createRoomCode('medium'));
+  const [roomCode, setRoomCode] = useState('------');
+  const [joinCode, setJoinCode] = useState('');
   const [profile, setProfile] = useState(null);
-  const [opponentName, setOpponentName] = useState(() => getRandomOpponent());
+  const [playerProfile, setPlayerProfile] = useState(null);
   const [matchmaking, setMatchmaking] = useState(null);
+  const [onlineError, setOnlineError] = useState(null);
+  const [isOnlineBusy, setIsOnlineBusy] = useState(false);
   const [tipIndex, setTipIndex] = useState(0);
   const phoneWidth = Math.min(width, 440);
   const contentWidth = Math.min(phoneWidth - (phoneWidth <= 360 ? 18 : 24), 416);
@@ -67,7 +62,7 @@ export default function OnlineScreen() {
     useCallback(() => {
       async function fetchRank() {
         setProfile(await loadRankedProfile());
-        setOpponentName(getRandomOpponent());
+        setPlayerProfile(await loadPlayerProfile());
       }
       fetchRank();
     }, [])
@@ -108,32 +103,134 @@ export default function OnlineScreen() {
 
   function handleDifficultyPress(nextDifficulty) {
     setDifficulty(nextDifficulty);
-    setRoomCode(createRoomCode(nextDifficulty));
+    setRoomCode('------');
   }
 
-  function startFriendRace() {
+  async function startFriendRace() {
+    if (!isOnlineGameplayConfigured() || !playerProfile) {
+      setOnlineError('Online gameplay needs the Aimbotic Supabase env values first.');
+      return;
+    }
+
+    setIsOnlineBusy(true);
+    setOnlineError(null);
     setTipIndex(0);
-    setMatchmaking({
-      type: 'friend',
-      title: 'Opening Friend Room',
-      subtitle: 'Share the code and get ready to race.',
-      status: roomCode,
-      duration: 1700,
-      href: `/puzzle?id=${selectedFriendPuzzle.id}&mode=race&room=${roomCode}`,
-    });
+
+    try {
+      const { room } = await createOnlineRoom({
+        playerId: playerProfile.id,
+        displayName: playerProfile.displayName,
+        puzzleId: selectedFriendPuzzle.id,
+        boardSeed: {
+          puzzleId: selectedFriendPuzzle.id,
+          title: selectedFriendPuzzle.title,
+          difficulty: selectedFriendPuzzle.difficulty,
+        },
+        maxPlayers: 2,
+      });
+
+      setRoomCode(room.room_code);
+      setMatchmaking({
+        type: 'friend',
+        title: 'Opening Friend Room',
+        subtitle: 'Share the code and get ready to race.',
+        status: room.room_code,
+        duration: 900,
+        href: `/puzzle?id=${selectedFriendPuzzle.id}&mode=race&room=${room.room_code}&onlineRoomId=${room.id}`,
+      });
+    } catch (error) {
+      console.error('Failed to create online room:', error);
+      setOnlineError('Could not create an online room. Try again.');
+    } finally {
+      setIsOnlineBusy(false);
+    }
   }
 
-  function startRankedRace() {
-    const rankedRoom = createRankedRoom(currentRank.name);
+  async function joinFriendRace() {
+    if (!isOnlineGameplayConfigured() || !playerProfile) {
+      setOnlineError('Online gameplay needs the Aimbotic Supabase env values first.');
+      return;
+    }
+
+    if (!joinCode.trim()) {
+      setOnlineError('Enter a room code to join.');
+      return;
+    }
+
+    setIsOnlineBusy(true);
+    setOnlineError(null);
     setTipIndex(0);
-    setMatchmaking({
-      type: 'ranked',
-      title: 'Looking For Player',
-      subtitle: `Searching ${currentRank.name} ranked queue...`,
-      status: `Matched with ${opponentName}`,
-      duration: 2300,
-      href: `/puzzle?id=${rankedPuzzle.id}&mode=ranked&room=${rankedRoom}&opponent=${opponentName}`,
-    });
+
+    try {
+      const { room } = await joinOnlineRoom({
+        roomCode: joinCode,
+        playerId: playerProfile.id,
+        displayName: playerProfile.displayName,
+      });
+      const puzzleId = room.puzzle_id || room.board_seed?.puzzleId || selectedFriendPuzzle.id;
+
+      setRoomCode(room.room_code);
+      setMatchmaking({
+        type: 'friend',
+        title: 'Joining Friend Room',
+        subtitle: 'Loading the shared board.',
+        status: room.room_code,
+        duration: 900,
+        href: `/puzzle?id=${puzzleId}&mode=race&room=${room.room_code}&onlineRoomId=${room.id}`,
+      });
+    } catch (error) {
+      console.error('Failed to join online room:', error);
+      setOnlineError('Could not join that room. Check the code and try again.');
+    } finally {
+      setIsOnlineBusy(false);
+    }
+  }
+
+  async function startRankedRace() {
+    if (!isOnlineGameplayConfigured() || !playerProfile) {
+      setOnlineError('Online gameplay needs the Aimbotic Supabase env values first.');
+      return;
+    }
+
+    setIsOnlineBusy(true);
+    setOnlineError(null);
+    setTipIndex(0);
+
+    try {
+      const { room, matched, opponentName: matchedOpponentName } = await findOrCreateRankedRoom({
+        playerId: playerProfile.id,
+        displayName: playerProfile.displayName,
+        rankName: currentRank.name,
+        puzzleId: rankedPuzzle.id,
+        difficulty: rankedPuzzle.difficulty,
+        boardSeed: {
+          queue: 'ranked',
+          rank: currentRank.name,
+          puzzleId: rankedPuzzle.id,
+          title: rankedPuzzle.title,
+          difficulty: rankedPuzzle.difficulty,
+        },
+        maxPlayers: 2,
+      });
+
+      const matchedPuzzleId = room.puzzle_id || room.board_seed?.puzzleId || rankedPuzzle.id;
+
+      setMatchmaking({
+        type: 'ranked',
+        title: matched ? 'Opponent Found' : 'Looking For Player',
+        subtitle: matched
+          ? `Matched ${matchedOpponentName} in ${currentRank.name}.`
+          : `Searching ${currentRank.name} ranked queue...`,
+        status: matched ? room.room_code : `Queue ${room.room_code}`,
+        duration: matched ? 700 : 1200,
+        href: `/puzzle?id=${matchedPuzzleId}&mode=ranked&room=${room.room_code}&onlineRoomId=${room.id}&opponent=${encodeURIComponent(matchedOpponentName)}`,
+      });
+    } catch (error) {
+      console.error('Failed to create ranked room:', error);
+      setOnlineError('Could not start ranked online play. Try again.');
+    } finally {
+      setIsOnlineBusy(false);
+    }
   }
 
   return (
@@ -174,6 +271,26 @@ export default function OnlineScreen() {
             <Text style={styles.roomMeta}>{selectedFriendPuzzle.title}</Text>
           </View>
 
+          <View style={styles.joinRow}>
+            <TextInput
+              style={styles.joinInput}
+              value={joinCode}
+              onChangeText={setJoinCode}
+              placeholder="Enter code"
+              placeholderTextColor="#64748b"
+              autoCapitalize="characters"
+              maxLength={8}
+            />
+            <TouchableOpacity
+              style={styles.joinButton}
+              onPress={joinFriendRace}
+              activeOpacity={0.82}
+              disabled={isOnlineBusy}
+            >
+              <Text style={styles.joinButtonText}>Join</Text>
+            </TouchableOpacity>
+          </View>
+
           <View style={[styles.segmentRow, isSmallPhone && styles.segmentRowSmall]}>
             {DIFFICULTIES.map((level) => {
               const isActive = level === difficulty;
@@ -196,8 +313,19 @@ export default function OnlineScreen() {
             })}
           </View>
 
-          <TouchableOpacity style={styles.friendButton} onPress={startFriendRace} activeOpacity={0.82}>
-            <Text style={styles.friendButtonText}>Create Friend Race</Text>
+          {onlineError && (
+            <Text style={styles.onlineError}>{onlineError}</Text>
+          )}
+
+          <TouchableOpacity
+            style={[styles.friendButton, isOnlineBusy && styles.buttonDisabled]}
+            onPress={startFriendRace}
+            activeOpacity={0.82}
+            disabled={isOnlineBusy}
+          >
+            <Text style={styles.friendButtonText}>
+              {isOnlineBusy ? 'Connecting...' : 'Create Friend Race'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -259,13 +387,20 @@ export default function OnlineScreen() {
           <View style={styles.matchInfo}>
             <Text style={styles.matchLabel}>Next ranked match</Text>
             <Text style={styles.matchText}>
-              {rankedPuzzle.title} vs {opponentName}
+              {rankedPuzzle.title} online queue
             </Text>
             <Text style={styles.matchMeta}>{rankedDifficulty.toUpperCase()} difficulty</Text>
           </View>
 
-          <TouchableOpacity style={styles.rankedButton} onPress={startRankedRace} activeOpacity={0.82}>
-            <Text style={styles.rankedButtonText}>Find Ranked Opponent</Text>
+          <TouchableOpacity
+            style={[styles.rankedButton, isOnlineBusy && styles.buttonDisabled]}
+            onPress={startRankedRace}
+            activeOpacity={0.82}
+            disabled={isOnlineBusy}
+          >
+            <Text style={styles.rankedButtonText}>
+              {isOnlineBusy ? 'Connecting...' : 'Find Ranked Opponent'}
+            </Text>
           </TouchableOpacity>
         </View>
 
@@ -461,6 +596,46 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '800',
   },
+  joinRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  joinInput: {
+    flex: 1,
+    minHeight: 48,
+    backgroundColor: '#0b1020',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1f2937',
+    color: '#ffffff',
+    fontSize: 16,
+    fontWeight: '900',
+    paddingHorizontal: 12,
+    letterSpacing: 0,
+  },
+  joinButton: {
+    minWidth: 72,
+    minHeight: 48,
+    backgroundColor: '#22304d',
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#31415f',
+  },
+  joinButtonText: {
+    color: '#ffffff',
+    fontSize: 14,
+    fontWeight: '900',
+  },
+  onlineError: {
+    color: '#ffb4b4',
+    fontSize: 13,
+    fontWeight: '800',
+    lineHeight: 18,
+    marginBottom: 12,
+  },
   segmentRow: {
     flexDirection: 'row',
     gap: 8,
@@ -499,6 +674,9 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingVertical: 16,
     alignItems: 'center',
+  },
+  buttonDisabled: {
+    opacity: 0.62,
   },
   friendButtonText: {
     color: '#061b16',

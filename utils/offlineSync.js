@@ -1,6 +1,10 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import { getSupabaseClient, isSupabaseConfigured } from './supabase';
+import {
+  getSyncSupabaseClient,
+  isAimboticSupabaseConfigured,
+  isSupabaseConfigured,
+} from './supabase';
 
 const OUTBOX_KEY = 'supabase_sync_outbox';
 const MAX_ATTEMPTS = 5;
@@ -45,7 +49,7 @@ async function syncEvent(supabase, event) {
 
   if (event.type === 'player_profile_upsert') {
     const { id, displayName } = event.payload;
-    return supabase.from('players').upsert({
+    return supabase.from('sudoku_players').upsert({
       id,
       display_name: displayName,
       updated_at: timestamp,
@@ -55,7 +59,7 @@ async function syncEvent(supabase, event) {
 
   if (event.type === 'puzzle_completed') {
     const { playerId, puzzleId, seconds = null, score = null } = event.payload;
-    return supabase.from('puzzle_completions').upsert(
+    return supabase.from('sudoku_puzzle_completions').upsert(
       {
         player_id: playerId,
         puzzle_id: puzzleId,
@@ -69,7 +73,7 @@ async function syncEvent(supabase, event) {
 
   if (event.type === 'ranked_profile_updated') {
     const { playerId, profile } = event.payload;
-    return supabase.from('ranked_profiles').upsert({
+    return supabase.from('sudoku_ranked_profiles').upsert({
       player_id: playerId,
       rating: profile.rating,
       wins: profile.wins,
@@ -83,11 +87,11 @@ async function syncEvent(supabase, event) {
 }
 
 export async function flushSyncQueue() {
-  if (!isSupabaseConfigured()) {
+  if (!isAimboticSupabaseConfigured() && !isSupabaseConfigured()) {
     return { synced: 0, pending: (await loadOutbox()).length };
   }
 
-  const supabase = getSupabaseClient();
+  const supabase = getSyncSupabaseClient();
   if (!supabase) {
     return { synced: 0, pending: (await loadOutbox()).length };
   }

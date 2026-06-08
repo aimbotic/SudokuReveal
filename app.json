@@ -1,27 +1,27 @@
 {
   "expo": {
-    "name": "Sudoku Infinite",
+    "name": "Sudoku Reveal",
     "owner": "aimbotic",
     "slug": "sudoku-reveal",
     "version": "1.0.0",
     "scheme": "sudokureveal",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/logo/sudoku-reveal-app-icon.png",
     "userInterfaceStyle": "light",
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/logo/sudoku-reveal-home-wordmark-tight.png",
       "resizeMode": "contain",
       "backgroundColor": "#ffffff"
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/logo/sudoku-reveal-app-icon.png",
+        "backgroundColor": "#020617"
       }
     },
     "ios": {
       "bundleIdentifier": "com.aimbotic.sudokuinfinite",
-      "icon": "./assets/apple-icon-sudoku-reveal.png",
+      "icon": "./assets/logo/sudoku-reveal-app-icon.png",
       "supportsTablet": false,
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
@@ -30,7 +30,7 @@
     "web": {
       "bundler": "metro",
       "output": "static",
-      "favicon": "./assets/favicon.png"
+      "favicon": "./assets/logo/sudoku-reveal-mark.png"
     },
     "experiments": {
       "baseUrl": "/SudokuReveal"

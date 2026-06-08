@@ -23,7 +23,7 @@ import {
 } from '../utils/background';
 import { flushSyncQueue, getPendingSyncCount } from '../utils/offlineSync';
 import { loadPlayerProfile, savePlayerProfile } from '../utils/player';
-import { isSupabaseConfigured } from '../utils/supabase';
+import { isAimboticSupabaseConfigured, isSupabaseConfigured } from '../utils/supabase';
 
 export default function SettingsScreen() {
   const [backgroundSelection, setBackgroundSelection] = useState(null);
@@ -53,7 +53,7 @@ export default function SettingsScreen() {
   );
 
   async function refreshSyncStatus() {
-    if (isSupabaseConfigured()) {
+    if (isAimboticSupabaseConfigured() || isSupabaseConfigured()) {
       setIsSyncing(true);
       const result = await flushSyncQueue();
       setPendingSyncCount(result.pending);
@@ -87,7 +87,7 @@ export default function SettingsScreen() {
     await refreshSyncStatus();
   }
 
-  const syncStatusText = isSupabaseConfigured()
+  const syncStatusText = isAimboticSupabaseConfigured() || isSupabaseConfigured()
     ? isSyncing
       ? 'syncing...'
       : pendingSyncCount > 0

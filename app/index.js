@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react';
 import {
   ImageBackground,
+  Image,
   View,
   Text,
   TouchableOpacity,
@@ -20,6 +21,8 @@ import {
 } from '../utils/background';
 import puzzlesData from '../assets/puzzles.json';
 import { getNextPlayablePuzzle, getLevelNumber } from '../utils/progression';
+
+const HOME_LOGO = require('../assets/logo/sudoku-reveal-home-wordmark-tight.png');
 
 export default function HomeScreen() {
   const { width, height } = useWindowDimensions();
@@ -143,12 +146,16 @@ export default function HomeScreen() {
             ]}
           >
             <View style={[styles.topSection, isShortPhone && styles.topSectionCompact]}>
-              <Text style={[styles.title, isCompactPhone && styles.titleCompact, isTinyPhone && styles.titleTiny]}>
-                Sudoku Infinite
-              </Text>
-              <Text style={[styles.subtitle, isCompactPhone && styles.subtitleCompact]}>
-                Solve. Score. Keep Going.
-              </Text>
+              <Image
+                source={HOME_LOGO}
+                style={[
+                  styles.homeLogo,
+                  isCompactPhone && styles.homeLogoCompact,
+                  isTinyPhone && styles.homeLogoTiny,
+                ]}
+                resizeMode="contain"
+                accessibilityLabel="Sudoku Reveal"
+              />
             </View>
 
             {selectedMode === null ? (
@@ -392,11 +399,16 @@ const styles = StyleSheet.create({
   },
   topSection: { alignItems: 'center', marginBottom: 24 },
   topSectionCompact: { marginBottom: 20 },
-  title: { fontSize: 38, fontWeight: '900', color: '#12182f', marginBottom: 6, textAlign: 'center' },
-  titleCompact: { fontSize: 34 },
-  titleTiny: { fontSize: 30 },
-  subtitle: { fontSize: 15, color: '#667085', fontWeight: '600', textAlign: 'center' },
-  subtitleCompact: { fontSize: 14 },
+  homeLogo: {
+    width: '100%',
+    height: 132,
+  },
+  homeLogoCompact: {
+    height: 116,
+  },
+  homeLogoTiny: {
+    height: 102,
+  },
   modeSection: {
     justifyContent: 'center',
     gap: 16,
